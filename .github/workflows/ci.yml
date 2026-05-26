@@ -63,7 +63,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Trivy IaC scan
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@6e12d4a9d66dbec9a8a00b8f16c5177e9b13ddb6  # v0.36.0
         with:
           scan-type: config
           scan-ref: .

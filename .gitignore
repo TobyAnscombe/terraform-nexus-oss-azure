@@ -1,0 +1,21 @@
+# Terraform state & local files
+.terraform/
+# NOTE: .terraform.lock.hcl should be committed to version control
+# (it pins provider versions for reproducible deployments)
+terraform.tfstate
+terraform.tfstate.backup
+terraform.tfstate.d/
+*.tfvars
+!terraform.tfvars.example
+
+# Bootstrap artefacts (may contain secrets)
+.tmp/
+.admin_access_token
+*.token
+
+# OS / editor
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/

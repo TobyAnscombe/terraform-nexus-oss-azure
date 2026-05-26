@@ -1,0 +1,24 @@
+# Copy to terraform.tfvars and fill in your values.
+# NEVER commit terraform.tfvars — it is git-ignored.
+
+# ── Required ──────────────────────────────────────────────────────────────────
+admin_password = "Ch@ngeMe123!"   # min 8 chars
+
+# ── Optional overrides ────────────────────────────────────────────────────────
+resource_group_name = "rg-nexus-oss"
+location            = "uksouth"   # uksouth | southcentralus | brazilsouth | etc.
+environment         = "prod"      # dev | staging | prod
+
+# Nexus 3 minimum: 1 vCPU / 4 GB.  Recommended for production: 4 vCPU / 8 GB.
+nexus_cpu       = 2
+nexus_memory_gb = 4
+
+storage_replication_type  = "LRS"
+nexus_data_share_quota_gb = 100
+
+dns_name_label_prefix = "nexus-oss"
+
+tags = {
+  owner   = "devops-team"
+  project = "internal-pypi"
+}

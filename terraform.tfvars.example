@@ -4,20 +4,31 @@
 # ── Required ──────────────────────────────────────────────────────────────────
 admin_password = "Ch@ngeMe123!"   # min 8 chars
 
-# ── Optional overrides ────────────────────────────────────────────────────────
+# ── Resource placement ────────────────────────────────────────────────────────
 resource_group_name = "rg-nexus-oss"
 location            = "uksouth"   # uksouth | southcentralus | brazilsouth | etc.
 environment         = "prod"      # dev | staging | prod
 
+# ── Container sizing ──────────────────────────────────────────────────────────
 # Nexus 3 minimum: 1 vCPU / 4 GB.  Recommended for production: 4 vCPU / 8 GB.
 nexus_cpu       = 2
 nexus_memory_gb = 4
 
+# ── Storage ───────────────────────────────────────────────────────────────────
 storage_replication_type  = "LRS"
 nexus_data_share_quota_gb = 100
 
+# ── Networking ────────────────────────────────────────────────────────────────
 dns_name_label_prefix = "nexus-oss"
 
+# vnet_integrated = false  → public IP + DNS label (default, internet-accessible)
+# vnet_integrated = true   → private IP in snet-aci, no public DNS
+#                            requires VPN/ExpressRoute or jumpbox to reach Nexus
+vnet_integrated    = false
+nsg_inbound_source = "*"   # restrict to your corporate CIDR when vnet_integrated = true
+                            # e.g. "203.0.113.0/24"
+
+# ── Optional tags ─────────────────────────────────────────────────────────────
 tags = {
   owner   = "devops-team"
   project = "internal-pypi"

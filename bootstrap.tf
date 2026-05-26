@@ -10,10 +10,11 @@
 #   5.  Create the hosted repo   (pypi-hosted).
 #   6.  Create the proxy repo    (pypi-pypi.org  → https://pypi.org, routing rule applied).
 #   7.  Create the group repo    (pypi-group = hosted + proxy, single pip URL).
-#   8.  Create / update two roles:
+#   8.  Create / update cleanup policy (pypi-proxy-cleanup, 90-day last-downloaded).
+#   9.  Create / update two roles:
 #         pypi-anonymous-reader      browse + read on pypi-group
 #         pypi-authenticated-deployer browse + read on pypi-group + add on pypi-hosted
-#   9.  Lock the anonymous user to the reader role only.
+#   10. Lock the anonymous user to the reader role only.
 #
 # Supply-chain protection
 #   The routing rule (ALLOW mode) means the proxy will only serve packages
@@ -37,7 +38,7 @@ resource "null_resource" "configure_nexus" {
     # Files share and survives container replacement (e.g. moving to VNet mode).
     # Re-run is only needed when the password or allowlist config actually changes.
     admin_password_sha256 = sha256(var.admin_password)
-    allowlist_version     = "3"
+    allowlist_version     = "4"
   }
 
   provisioner "local-exec" {
@@ -331,7 +332,53 @@ resource "null_resource" "configure_nexus" {
       sleep 10
 
       # -----------------------------------------------------------------------
-      # 8. Roles
+      # 8. Cleanup policy — remove proxy-cached assets not downloaded in 90 days
+      #
+      #    Without a cleanup policy the Azure Files share slowly fills up with
+      #    every .whl and .tar.gz ever fetched via the proxy.
+      #    This policy marks stale cached files for deletion; the Nexus scheduler
+      #    runs the actual purge nightly by default.
+      # -----------------------------------------------------------------------
+      echo "==> Upserting pypi-proxy-cleanup policy ..."
+      POLICY_EXISTS=$(curl -s -u "admin:$ADMIN_PASS" "$NEXUS/cleanup-policies" \
+                        | jq -r '.[] | select(.name=="pypi-proxy-cleanup") | .name')
+      CLEANUP_BODY='{
+        "name":   "pypi-proxy-cleanup",
+        "format": "pypi",
+        "notes":  "Remove proxy-cached assets not downloaded in 90 days",
+        "criteria": {
+          "lastDownloaded": 90
+        }
+      }'
+      if [ -n "$POLICY_EXISTS" ]; then
+        http=$(curl -s -o /tmp/nx_resp.txt -w "%%{http_code}" \
+                 -u "admin:$ADMIN_PASS" \
+                 -X PUT "$NEXUS/cleanup-policies/pypi-proxy-cleanup" \
+                 -H "Content-Type: application/json" -d "$CLEANUP_BODY")
+        echo "    Updated cleanup policy -> $http"
+        [ "$http" = "200" ] || [ "$http" = "204" ] || { cat /tmp/nx_resp.txt; echo; }
+      else
+        http=$(curl -s -o /tmp/nx_resp.txt -w "%%{http_code}" \
+                 -u "admin:$ADMIN_PASS" \
+                 -X POST "$NEXUS/cleanup-policies" \
+                 -H "Content-Type: application/json" -d "$CLEANUP_BODY")
+        echo "    Created cleanup policy -> $http"
+        [ "$http" = "200" ] || [ "$http" = "201" ] || { cat /tmp/nx_resp.txt; echo; }
+      fi
+
+      echo "==> Associating cleanup policy with pypi-pypi.org ..."
+      PROXY_CONFIG=$(curl -s -u "admin:$ADMIN_PASS" \
+                       "$NEXUS/repositories/pypi/proxy/pypi-pypi.org")
+      if [ -n "$PROXY_CONFIG" ] && echo "$PROXY_CONFIG" | jq -e '.name' > /dev/null 2>&1; then
+        UPDATED=$(echo "$PROXY_CONFIG" \
+                    | jq '.cleanup = {"policyNames": ["pypi-proxy-cleanup"]}')
+        nexus_put "repositories/pypi/proxy/pypi-pypi.org" "$UPDATED"
+      else
+        echo "    pypi-pypi.org not found — cleanup association skipped (will apply on next run)."
+      fi
+
+      # -----------------------------------------------------------------------
+      # 9. Roles
       #    Anonymous readers use pypi-group (so they get the routing-rule filter).
       #    Authenticated deployers get pypi-group for reads + pypi-hosted for upload.
       # -----------------------------------------------------------------------

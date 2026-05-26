@@ -44,6 +44,12 @@ resource "azurerm_subnet" "aci" {
   virtual_network_name = azurerm_virtual_network.main.name
   address_prefixes     = [var.aci_subnet_prefix]
 
+  # Microsoft.Storage service endpoint enables the storage account network rule
+  # (storage.tf) to allow traffic from this subnet while blocking all other
+  # sources.  Only attached when vnet_integrated = true; not needed in public
+  # mode where ACI reaches storage over the internet.
+  service_endpoints = var.vnet_integrated ? ["Microsoft.Storage"] : []
+
   delegation {
     name = "aci-delegation"
     service_delegation {

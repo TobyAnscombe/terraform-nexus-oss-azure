@@ -7,6 +7,8 @@
 #   2.  Set the admin password (idempotent across re-runs).
 #   3.  Enable global anonymous access.
 #   4.  Create the package allowlist routing rule (pypi-allowlist).
+#       Categories: toolchain · core data · distributed · visualisation ·
+#       ML · MLOps · explainability · data quality · I/O · Jupyter · runtime.
 #   5.  Create the hosted repo   (pypi-hosted).
 #   6.  Create the proxy repo    (pypi-pypi.org  → https://pypi.org, routing rule applied).
 #   7.  Create the group repo    (pypi-group = hosted + proxy, single pip URL).
@@ -38,7 +40,7 @@ resource "null_resource" "configure_nexus" {
     # Files share and survives container replacement (e.g. moving to VNet mode).
     # Re-run is only needed when the password or allowlist config actually changes.
     admin_password_sha256 = sha256(var.admin_password)
-    allowlist_version     = "4"
+    allowlist_version     = "5"
   }
 
   provisioner "local-exec" {
@@ -198,73 +200,89 @@ resource "null_resource" "configure_nexus" {
         "description": "Supply-chain gate: only approved packages pass through the PyPI proxy",
         "mode":        "ALLOW",
         "matchers": [
-          "^/simple/pip(/.*)?$",           "^/packages/pip(/.*)?$",
-          "^/simple/setuptools(/.*)?$",    "^/packages/setuptools(/.*)?$",
-          "^/simple/wheel(/.*)?$",         "^/packages/wheel(/.*)?$",
-          "^/simple/twine(/.*)?$",         "^/packages/twine(/.*)?$",
-          "^/simple/build(/.*)?$",         "^/packages/build(/.*)?$",
 
-          "^/simple/numpy(/.*)?$",         "^/packages/numpy(/.*)?$",
-          "^/simple/pandas(/.*)?$",        "^/packages/pandas(/.*)?$",
-          "^/simple/scipy(/.*)?$",         "^/packages/scipy(/.*)?$",
-          "^/simple/polars(/.*)?$",        "^/packages/polars(/.*)?$",
+          "^/simple/pip(/.*)?$",              "^/packages/pip(/.*)?$",
+          "^/simple/setuptools(/.*)?$",       "^/packages/setuptools(/.*)?$",
+          "^/simple/wheel(/.*)?$",            "^/packages/wheel(/.*)?$",
+          "^/simple/twine(/.*)?$",            "^/packages/twine(/.*)?$",
+          "^/simple/build(/.*)?$",            "^/packages/build(/.*)?$",
+          "^/simple/poetry(/.*)?$",           "^/packages/poetry(/.*)?$",
+          "^/simple/pytest(/.*)?$",           "^/packages/pytest(/.*)?$",
 
-          "^/simple/matplotlib(/.*)?$",    "^/packages/matplotlib(/.*)?$",
-          "^/simple/seaborn(/.*)?$",       "^/packages/seaborn(/.*)?$",
-          "^/simple/plotly(/.*)?$",        "^/packages/plotly(/.*)?$",
-          "^/simple/bokeh(/.*)?$",         "^/packages/bokeh(/.*)?$",
-          "^/simple/altair(/.*)?$",        "^/packages/altair(/.*)?$",
-          "^/simple/kaleido(/.*)?$",       "^/packages/kaleido(/.*)?$",
+          "^/simple/numpy(/.*)?$",            "^/packages/numpy(/.*)?$",
+          "^/simple/pandas(/.*)?$",           "^/packages/pandas(/.*)?$",
+          "^/simple/scipy(/.*)?$",            "^/packages/scipy(/.*)?$",
+          "^/simple/polars(/.*)?$",           "^/packages/polars(/.*)?$",
+          "^/simple/pyarrow(/.*)?$",          "^/packages/pyarrow(/.*)?$",
 
-          "^/simple/scikit-learn(/.*)?$",  "^/packages/scikit-learn(/.*)?$",
-          "^/simple/statsmodels(/.*)?$",   "^/packages/statsmodels(/.*)?$",
-          "^/simple/xgboost(/.*)?$",       "^/packages/xgboost(/.*)?$",
-          "^/simple/lightgbm(/.*)?$",      "^/packages/lightgbm(/.*)?$",
+          "^/simple/dask(/.*)?$",             "^/packages/dask(/.*)?$",
+          "^/simple/pyspark(/.*)?$",          "^/packages/pyspark(/.*)?$",
 
-          "^/simple/openpyxl(/.*)?$",      "^/packages/openpyxl(/.*)?$",
-          "^/simple/xlrd(/.*)?$",          "^/packages/xlrd(/.*)?$",
-          "^/simple/xlsxwriter(/.*)?$",    "^/packages/xlsxwriter(/.*)?$",
-          "^/simple/pyarrow(/.*)?$",       "^/packages/pyarrow(/.*)?$",
-          "^/simple/fastparquet(/.*)?$",   "^/packages/fastparquet(/.*)?$",
-          "^/simple/sqlalchemy(/.*)?$",    "^/packages/sqlalchemy(/.*)?$",
-          "^/simple/psycopg2-binary(/.*)?$","^/packages/psycopg2-binary(/.*)?$",
-          "^/simple/pymysql(/.*)?$",       "^/packages/pymysql(/.*)?$",
-          "^/simple/pyodbc(/.*)?$",        "^/packages/pyodbc(/.*)?$",
+          "^/simple/matplotlib(/.*)?$",       "^/packages/matplotlib(/.*)?$",
+          "^/simple/seaborn(/.*)?$",          "^/packages/seaborn(/.*)?$",
+          "^/simple/plotly(/.*)?$",           "^/packages/plotly(/.*)?$",
+          "^/simple/bokeh(/.*)?$",            "^/packages/bokeh(/.*)?$",
+          "^/simple/altair(/.*)?$",           "^/packages/altair(/.*)?$",
+          "^/simple/kaleido(/.*)?$",          "^/packages/kaleido(/.*)?$",
+          "^/simple/missingno(/.*)?$",        "^/packages/missingno(/.*)?$",
 
-          "^/simple/tqdm(/.*)?$",          "^/packages/tqdm(/.*)?$",
-          "^/simple/joblib(/.*)?$",        "^/packages/joblib(/.*)?$",
-          "^/simple/numba(/.*)?$",         "^/packages/numba(/.*)?$",
-          "^/simple/dask(/.*)?$",          "^/packages/dask(/.*)?$",
-          "^/simple/requests(/.*)?$",      "^/packages/requests(/.*)?$",
-          "^/simple/httpx(/.*)?$",         "^/packages/httpx(/.*)?$",
-          "^/simple/aiohttp(/.*)?$",       "^/packages/aiohttp(/.*)?$",
-          "^/simple/python-dateutil(/.*)?$","^/packages/python-dateutil(/.*)?$",
-          "^/simple/pytz(/.*)?$",          "^/packages/pytz(/.*)?$",
-          "^/simple/tzdata(/.*)?$",        "^/packages/tzdata(/.*)?$",
-          "^/simple/six(/.*)?$",           "^/packages/six(/.*)?$",
-          "^/simple/certifi(/.*)?$",       "^/packages/certifi(/.*)?$",
-          "^/simple/charset-normalizer(/.*)?$","^/packages/charset-normalizer(/.*)?$",
-          "^/simple/idna(/.*)?$",          "^/packages/idna(/.*)?$",
-          "^/simple/urllib3(/.*)?$",       "^/packages/urllib3(/.*)?$",
-          "^/simple/packaging(/.*)?$",     "^/packages/packaging(/.*)?$",
-          "^/simple/click(/.*)?$",         "^/packages/click(/.*)?$",
-          "^/simple/pydantic(/.*)?$",      "^/packages/pydantic(/.*)?$",
-          "^/simple/pydantic-core(/.*)?$", "^/packages/pydantic-core(/.*)?$",
-          "^/simple/typing-extensions(/.*)?$","^/packages/typing-extensions(/.*)?$",
-          "^/simple/attrs(/.*)?$",         "^/packages/attrs(/.*)?$",
-          "^/simple/annotated-types(/.*)?$","^/packages/annotated-types(/.*)?$",
+          "^/simple/scikit-learn(/.*)?$",     "^/packages/scikit-learn(/.*)?$",
+          "^/simple/xgboost(/.*)?$",          "^/packages/xgboost(/.*)?$",
+          "^/simple/lightgbm(/.*)?$",         "^/packages/lightgbm(/.*)?$",
+          "^/simple/statsmodels(/.*)?$",      "^/packages/statsmodels(/.*)?$",
+          "^/simple/lifelines(/.*)?$",        "^/packages/lifelines(/.*)?$",
+          "^/simple/pingouin(/.*)?$",         "^/packages/pingouin(/.*)?$",
 
-          "^/simple/jupyter(/.*)?$",       "^/packages/jupyter(/.*)?$",
-          "^/simple/jupyterlab(/.*)?$",    "^/packages/jupyterlab(/.*)?$",
-          "^/simple/ipython(/.*)?$",       "^/packages/ipython(/.*)?$",
-          "^/simple/ipykernel(/.*)?$",     "^/packages/ipykernel(/.*)?$",
-          "^/simple/notebook(/.*)?$",      "^/packages/notebook(/.*)?$",
-          "^/simple/nbformat(/.*)?$",      "^/packages/nbformat(/.*)?$",
-          "^/simple/nbconvert(/.*)?$",     "^/packages/nbconvert(/.*)?$",
-          "^/simple/ipywidgets(/.*)?$",    "^/packages/ipywidgets(/.*)?$",
+          "^/simple/mlflow(/.*)?$",           "^/packages/mlflow(/.*)?$",
+
+          "^/simple/shap(/.*)?$",             "^/packages/shap(/.*)?$",
+          "^/simple/lime(/.*)?$",             "^/packages/lime(/.*)?$",
+          "^/simple/eli5(/.*)?$",             "^/packages/eli5(/.*)?$",
+
+          "^/simple/pandera(/.*)?$",          "^/packages/pandera(/.*)?$",
+          "^/simple/great-expectations(/.*)?$","^/packages/great-expectations(/.*)?$",
+
+          "^/simple/openpyxl(/.*)?$",         "^/packages/openpyxl(/.*)?$",
+          "^/simple/xlrd(/.*)?$",             "^/packages/xlrd(/.*)?$",
+          "^/simple/xlsxwriter(/.*)?$",       "^/packages/xlsxwriter(/.*)?$",
+          "^/simple/fastparquet(/.*)?$",      "^/packages/fastparquet(/.*)?$",
+          "^/simple/sqlalchemy(/.*)?$",       "^/packages/sqlalchemy(/.*)?$",
+          "^/simple/psycopg2-binary(/.*)?$",  "^/packages/psycopg2-binary(/.*)?$",
+          "^/simple/pymysql(/.*)?$",          "^/packages/pymysql(/.*)?$",
+          "^/simple/pyodbc(/.*)?$",           "^/packages/pyodbc(/.*)?$",
+
+          "^/simple/jupyter(/.*)?$",          "^/packages/jupyter(/.*)?$",
+          "^/simple/jupyterlab(/.*)?$",       "^/packages/jupyterlab(/.*)?$",
+          "^/simple/ipython(/.*)?$",          "^/packages/ipython(/.*)?$",
+          "^/simple/ipykernel(/.*)?$",        "^/packages/ipykernel(/.*)?$",
+          "^/simple/notebook(/.*)?$",         "^/packages/notebook(/.*)?$",
+          "^/simple/nbformat(/.*)?$",         "^/packages/nbformat(/.*)?$",
+          "^/simple/nbconvert(/.*)?$",        "^/packages/nbconvert(/.*)?$",
+          "^/simple/ipywidgets(/.*)?$",       "^/packages/ipywidgets(/.*)?$",
           "^/simple/widgetsnbextension(/.*)?$","^/packages/widgetsnbextension(/.*)?$",
 
-          "^/simple/pandera(/.*)?$",       "^/packages/pandera(/.*)?$"
+          "^/simple/joblib(/.*)?$",           "^/packages/joblib(/.*)?$",
+          "^/simple/numba(/.*)?$",            "^/packages/numba(/.*)?$",
+          "^/simple/tqdm(/.*)?$",             "^/packages/tqdm(/.*)?$",
+          "^/simple/requests(/.*)?$",         "^/packages/requests(/.*)?$",
+          "^/simple/httpx(/.*)?$",            "^/packages/httpx(/.*)?$",
+          "^/simple/aiohttp(/.*)?$",          "^/packages/aiohttp(/.*)?$",
+          "^/simple/python-dateutil(/.*)?$",  "^/packages/python-dateutil(/.*)?$",
+          "^/simple/pytz(/.*)?$",             "^/packages/pytz(/.*)?$",
+          "^/simple/tzdata(/.*)?$",           "^/packages/tzdata(/.*)?$",
+          "^/simple/six(/.*)?$",              "^/packages/six(/.*)?$",
+          "^/simple/certifi(/.*)?$",          "^/packages/certifi(/.*)?$",
+          "^/simple/charset-normalizer(/.*)?$","^/packages/charset-normalizer(/.*)?$",
+          "^/simple/idna(/.*)?$",             "^/packages/idna(/.*)?$",
+          "^/simple/urllib3(/.*)?$",          "^/packages/urllib3(/.*)?$",
+          "^/simple/packaging(/.*)?$",        "^/packages/packaging(/.*)?$",
+          "^/simple/click(/.*)?$",            "^/packages/click(/.*)?$",
+          "^/simple/pydantic(/.*)?$",         "^/packages/pydantic(/.*)?$",
+          "^/simple/pydantic-core(/.*)?$",    "^/packages/pydantic-core(/.*)?$",
+          "^/simple/typing-extensions(/.*)?$","^/packages/typing-extensions(/.*)?$",
+          "^/simple/attrs(/.*)?$",            "^/packages/attrs(/.*)?$",
+          "^/simple/annotated-types(/.*)?$",  "^/packages/annotated-types(/.*)?$"
+
         ]
       }'
 

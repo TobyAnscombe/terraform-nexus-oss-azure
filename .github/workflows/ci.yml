@@ -6,75 +6,11 @@ on:
   pull_request:
     branches: [main]
 
-permissions:
-  contents: read
-
 jobs:
-  # ---------------------------------------------------------------------------
-  # 1. Terraform format + validate
-  # ---------------------------------------------------------------------------
-  terraform:
-    name: Terraform
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "~> 1.5"
-
-      - name: Format check
-        run: terraform fmt -check -recursive
-
-      - name: Init (no backend)
-        run: terraform init -backend=false
-
-      - name: Validate
-        run: terraform validate
-
-  # ---------------------------------------------------------------------------
-  # 2. TFLint — Terraform linter with azurerm ruleset
-  # ---------------------------------------------------------------------------
-  tflint:
-    name: TFLint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: terraform-linters/setup-tflint@v4
-        with:
-          tflint_version: v0.55.0
-
-      - name: Init TFLint
-        run: tflint --init
-
-      - name: Run TFLint
-        run: tflint --recursive
-
-  # ---------------------------------------------------------------------------
-  # 3. Trivy — IaC security scan
-  #    Fails the build on CRITICAL and HIGH findings.
-  #    Known accepted risks are listed in .trivyignore with justifications.
-  # ---------------------------------------------------------------------------
-  security:
-    name: Security scan
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Trivy
-        run: |
-          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key \
-            | gpg --dearmor \
-            | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
-          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" \
-            | sudo tee /etc/apt/sources.list.d/trivy.list
-          sudo apt-get update -qq
-          sudo apt-get install -y trivy
-
-      - name: Trivy IaC scan
-        run: |
-          trivy config . \
-            --severity HIGH,CRITICAL \
-            --exit-code 1 \
-            --ignorefile .trivyignore
+  ci:
+    uses: ./.github/workflows/terraform-ci.yml
+    with:
+      terraform_version: "~> 1.5"
+      tflint_version: "v0.55.0"
+      working_directory: "."
+      trivy_severity: "HIGH,CRITICAL"

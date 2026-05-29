@@ -6,7 +6,9 @@
 #       skipped — config persists in the Azure Files share.
 #   2.  Set the admin password (idempotent across re-runs).
 #   3.  Enable global anonymous access.
-#   4.  Create the package allowlist routing rule (pypi-allowlist).
+#
+#   Python (PyPI proxy)
+#   4.  Create the PyPI allowlist routing rule (pypi-allowlist).
 #       Categories: toolchain · core data · distributed · visualisation ·
 #       ML · MLOps · explainability · data quality · I/O · Jupyter · runtime.
 #   5.  Create the hosted repo   (pypi-hosted).
@@ -16,12 +18,25 @@
 #   9.  Create / update two roles:
 #         pypi-anonymous-reader      browse + read on pypi-group
 #         pypi-authenticated-deployer browse + read on pypi-group + add on pypi-hosted
-#   10. Lock the anonymous user to the reader role only.
+#
+#   R (CRAN proxy)
+#   10. Create the CRAN allowlist routing rule (r-cran-allowlist).
+#       Categories: toolchain · tidyverse plumbing · data wrangling ·
+#       I/O & formats · visualisation · string matching.
+#       Each package matches 3 paths: source tarball, Windows binary, macOS binary.
+#   11. Create the hosted repo   (r-hosted).
+#   12. Create the proxy repo    (r-cran.r-project.org → https://cran.r-project.org).
+#   13. Create the group repo    (r-group = hosted + proxy).
+#   14. Create / update cleanup policy (r-proxy-cleanup, 90-day last-downloaded).
+#   15. Create / update two roles:
+#         r-anonymous-reader      browse + read on r-group
+#         r-authenticated-deployer browse + read on r-group + add on r-hosted
+#   16. Lock the anonymous user to both pypi-anonymous-reader and r-anonymous-reader.
 #
 # Supply-chain protection
-#   The routing rule (ALLOW mode) means the proxy will only serve packages
-#   whose /simple/{name} path matches the allowlist.  Everything else gets
-#   a 404 from the proxy; the hosted repo is unaffected (admins control it).
+#   Routing rules in ALLOW mode mean proxies only serve packages whose path
+#   matches the allowlist.  Everything else gets a 404; hosted repos are
+#   unaffected (admins control them).
 #
 # Prerequisites on the Terraform machine: bash, curl, jq
 ###############################################################################
@@ -40,7 +55,7 @@ resource "null_resource" "configure_nexus" {
     # Files share and survives container replacement (e.g. moving to VNet mode).
     # Re-run is only needed when the password or allowlist config actually changes.
     admin_password_sha256 = sha256(var.admin_password)
-    allowlist_version     = "5"
+    allowlist_version     = "6"
   }
 
   provisioner "local-exec" {
@@ -109,9 +124,9 @@ resource "null_resource" "configure_nexus" {
         [ "$http" = "200" ] || [ "$http" = "204" ] || { cat /tmp/nx_resp.txt; echo; }
       }
 
-      # Create repo if it doesn't exist (checks by name, repo_type = hosted|proxy|group)
+      # Create repo if it doesn't exist (checks by name, repo_type = hosted|proxy|group, format = pypi|r|…)
       nexus_create_repo() {
-        local repo_type="$1" repo_name="$2" body="$3"
+        local repo_type="$1" repo_name="$2" body="$3" format="$${4:-pypi}"
         EXISTS=$(curl -s -u "admin:$ADMIN_PASS" "$NEXUS/repositories" \
                    | jq -r --arg n "$repo_name" '.[] | select(.name==$n) | .name')
         if [ -n "$EXISTS" ]; then
@@ -121,9 +136,9 @@ resource "null_resource" "configure_nexus" {
         local http
         http=$(curl -s -o /tmp/nx_resp.txt -w "%%{http_code}" \
                  -u "admin:$ADMIN_PASS" \
-                 -X POST "$NEXUS/repositories/pypi/$repo_type" \
+                 -X POST "$NEXUS/repositories/$format/$repo_type" \
                  -H "Content-Type: application/json" -d "$body")
-        echo "    Created pypi/$repo_type '$repo_name' -> $http"
+        echo "    Created $format/$repo_type '$repo_name' -> $http"
         [ "$http" = "201" ] || [ "$http" = "200" ] || { cat /tmp/nx_resp.txt; echo; }
       }
 
@@ -430,10 +445,236 @@ resource "null_resource" "configure_nexus" {
       }'
 
       # -----------------------------------------------------------------------
-      # 9. Restrict the anonymous user to the reader role only
-      #    (Removes the default nx-anonymous role which allows unrestricted browse)
       # -----------------------------------------------------------------------
-      echo "==> Assigning pypi-anonymous-reader to the anonymous user ..."
+      # R (CRAN proxy)
+      # -----------------------------------------------------------------------
+      # -----------------------------------------------------------------------
+
+      # -----------------------------------------------------------------------
+      # 10. Create the CRAN allowlist routing rule
+      #
+      #     CRAN paths differ from PyPI — each package needs THREE matchers:
+      #       ^/src/contrib/{name}_          — source tarball
+      #       ^/bin/windows/contrib/…/{name}_ — Windows binary
+      #       ^/bin/macosx/…/{name}_          — macOS binary
+      #
+      #     Four global matchers are also required so R can fetch the package
+      #     index (PACKAGES files) before attempting any download.
+      # -----------------------------------------------------------------------
+      echo "==> Upserting r-cran-allowlist routing rule ..."
+      nexus_upsert_routing_rule "r-cran-allowlist" '{
+        "name":        "r-cran-allowlist",
+        "description": "Supply-chain gate: only approved R packages pass through the CRAN proxy",
+        "mode":        "ALLOW",
+        "matchers": [
+
+          "^/src/contrib/PACKAGES",
+          "^/src/contrib/Meta/",
+          "^/bin/windows/contrib/[^/]+/PACKAGES",
+          "^/bin/macosx/[^/]+/contrib/[^/]+/PACKAGES",
+
+          "^/src/contrib/rlang_",              "^/bin/windows/contrib/[^/]+/rlang_",              "^/bin/macosx/[^/]+/contrib/[^/]+/rlang_",
+          "^/src/contrib/vctrs_",              "^/bin/windows/contrib/[^/]+/vctrs_",              "^/bin/macosx/[^/]+/contrib/[^/]+/vctrs_",
+          "^/src/contrib/lifecycle_",          "^/bin/windows/contrib/[^/]+/lifecycle_",          "^/bin/macosx/[^/]+/contrib/[^/]+/lifecycle_",
+          "^/src/contrib/cli_",                "^/bin/windows/contrib/[^/]+/cli_",                "^/bin/macosx/[^/]+/contrib/[^/]+/cli_",
+          "^/src/contrib/glue_",               "^/bin/windows/contrib/[^/]+/glue_",               "^/bin/macosx/[^/]+/contrib/[^/]+/glue_",
+          "^/src/contrib/magrittr_",           "^/bin/windows/contrib/[^/]+/magrittr_",           "^/bin/macosx/[^/]+/contrib/[^/]+/magrittr_",
+          "^/src/contrib/generics_",           "^/bin/windows/contrib/[^/]+/generics_",           "^/bin/macosx/[^/]+/contrib/[^/]+/generics_",
+          "^/src/contrib/R6_",                 "^/bin/windows/contrib/[^/]+/R6_",                 "^/bin/macosx/[^/]+/contrib/[^/]+/R6_",
+          "^/src/contrib/Rcpp_",               "^/bin/windows/contrib/[^/]+/Rcpp_",               "^/bin/macosx/[^/]+/contrib/[^/]+/Rcpp_",
+          "^/src/contrib/withr_",              "^/bin/windows/contrib/[^/]+/withr_",              "^/bin/macosx/[^/]+/contrib/[^/]+/withr_",
+          "^/src/contrib/pkgconfig_",          "^/bin/windows/contrib/[^/]+/pkgconfig_",          "^/bin/macosx/[^/]+/contrib/[^/]+/pkgconfig_",
+          "^/src/contrib/ellipsis_",           "^/bin/windows/contrib/[^/]+/ellipsis_",           "^/bin/macosx/[^/]+/contrib/[^/]+/ellipsis_",
+
+          "^/src/contrib/tibble_",             "^/bin/windows/contrib/[^/]+/tibble_",             "^/bin/macosx/[^/]+/contrib/[^/]+/tibble_",
+          "^/src/contrib/purrr_",              "^/bin/windows/contrib/[^/]+/purrr_",              "^/bin/macosx/[^/]+/contrib/[^/]+/purrr_",
+          "^/src/contrib/readr_",              "^/bin/windows/contrib/[^/]+/readr_",              "^/bin/macosx/[^/]+/contrib/[^/]+/readr_",
+          "^/src/contrib/forcats_",            "^/bin/windows/contrib/[^/]+/forcats_",            "^/bin/macosx/[^/]+/contrib/[^/]+/forcats_",
+          "^/src/contrib/hms_",                "^/bin/windows/contrib/[^/]+/hms_",                "^/bin/macosx/[^/]+/contrib/[^/]+/hms_",
+          "^/src/contrib/vroom_",              "^/bin/windows/contrib/[^/]+/vroom_",              "^/bin/macosx/[^/]+/contrib/[^/]+/vroom_",
+          "^/src/contrib/tidyselect_",         "^/bin/windows/contrib/[^/]+/tidyselect_",         "^/bin/macosx/[^/]+/contrib/[^/]+/tidyselect_",
+          "^/src/contrib/pillar_",             "^/bin/windows/contrib/[^/]+/pillar_",             "^/bin/macosx/[^/]+/contrib/[^/]+/pillar_",
+          "^/src/contrib/fansi_",              "^/bin/windows/contrib/[^/]+/fansi_",              "^/bin/macosx/[^/]+/contrib/[^/]+/fansi_",
+          "^/src/contrib/utf8_",               "^/bin/windows/contrib/[^/]+/utf8_",               "^/bin/macosx/[^/]+/contrib/[^/]+/utf8_",
+          "^/src/contrib/crayon_",             "^/bin/windows/contrib/[^/]+/crayon_",             "^/bin/macosx/[^/]+/contrib/[^/]+/crayon_",
+          "^/src/contrib/bit64_",              "^/bin/windows/contrib/[^/]+/bit64_",              "^/bin/macosx/[^/]+/contrib/[^/]+/bit64_",
+          "^/src/contrib/bit_",                "^/bin/windows/contrib/[^/]+/bit_",                "^/bin/macosx/[^/]+/contrib/[^/]+/bit_",
+
+          "^/src/contrib/tidyverse_",          "^/bin/windows/contrib/[^/]+/tidyverse_",          "^/bin/macosx/[^/]+/contrib/[^/]+/tidyverse_",
+          "^/src/contrib/dplyr_",              "^/bin/windows/contrib/[^/]+/dplyr_",              "^/bin/macosx/[^/]+/contrib/[^/]+/dplyr_",
+          "^/src/contrib/tidyr_",              "^/bin/windows/contrib/[^/]+/tidyr_",              "^/bin/macosx/[^/]+/contrib/[^/]+/tidyr_",
+          "^/src/contrib/stringr_",            "^/bin/windows/contrib/[^/]+/stringr_",            "^/bin/macosx/[^/]+/contrib/[^/]+/stringr_",
+          "^/src/contrib/stringi_",            "^/bin/windows/contrib/[^/]+/stringi_",            "^/bin/macosx/[^/]+/contrib/[^/]+/stringi_",
+          "^/src/contrib/data\\.table_",       "^/bin/windows/contrib/[^/]+/data\\.table_",       "^/bin/macosx/[^/]+/contrib/[^/]+/data\\.table_",
+          "^/src/contrib/lubridate_",          "^/bin/windows/contrib/[^/]+/lubridate_",          "^/bin/macosx/[^/]+/contrib/[^/]+/lubridate_",
+          "^/src/contrib/broom_",              "^/bin/windows/contrib/[^/]+/broom_",              "^/bin/macosx/[^/]+/contrib/[^/]+/broom_",
+          "^/src/contrib/modelr_",             "^/bin/windows/contrib/[^/]+/modelr_",             "^/bin/macosx/[^/]+/contrib/[^/]+/modelr_",
+
+          "^/src/contrib/haven_",              "^/bin/windows/contrib/[^/]+/haven_",              "^/bin/macosx/[^/]+/contrib/[^/]+/haven_",
+          "^/src/contrib/readxl_",             "^/bin/windows/contrib/[^/]+/readxl_",             "^/bin/macosx/[^/]+/contrib/[^/]+/readxl_",
+          "^/src/contrib/openxlsx_",           "^/bin/windows/contrib/[^/]+/openxlsx_",           "^/bin/macosx/[^/]+/contrib/[^/]+/openxlsx_",
+          "^/src/contrib/rio_",                "^/bin/windows/contrib/[^/]+/rio_",                "^/bin/macosx/[^/]+/contrib/[^/]+/rio_",
+          "^/src/contrib/foreign_",            "^/bin/windows/contrib/[^/]+/foreign_",            "^/bin/macosx/[^/]+/contrib/[^/]+/foreign_",
+          "^/src/contrib/cellranger_",         "^/bin/windows/contrib/[^/]+/cellranger_",         "^/bin/macosx/[^/]+/contrib/[^/]+/cellranger_",
+          "^/src/contrib/zip_",                "^/bin/windows/contrib/[^/]+/zip_",                "^/bin/macosx/[^/]+/contrib/[^/]+/zip_",
+          "^/src/contrib/jsonlite_",           "^/bin/windows/contrib/[^/]+/jsonlite_",           "^/bin/macosx/[^/]+/contrib/[^/]+/jsonlite_",
+          "^/src/contrib/curl_",               "^/bin/windows/contrib/[^/]+/curl_",               "^/bin/macosx/[^/]+/contrib/[^/]+/curl_",
+          "^/src/contrib/httr_",               "^/bin/windows/contrib/[^/]+/httr_",               "^/bin/macosx/[^/]+/contrib/[^/]+/httr_",
+
+          "^/src/contrib/ggplot2_",            "^/bin/windows/contrib/[^/]+/ggplot2_",            "^/bin/macosx/[^/]+/contrib/[^/]+/ggplot2_",
+          "^/src/contrib/scales_",             "^/bin/windows/contrib/[^/]+/scales_",             "^/bin/macosx/[^/]+/contrib/[^/]+/scales_",
+          "^/src/contrib/gtable_",             "^/bin/windows/contrib/[^/]+/gtable_",             "^/bin/macosx/[^/]+/contrib/[^/]+/gtable_",
+          "^/src/contrib/isoband_",            "^/bin/windows/contrib/[^/]+/isoband_",            "^/bin/macosx/[^/]+/contrib/[^/]+/isoband_",
+          "^/src/contrib/farver_",             "^/bin/windows/contrib/[^/]+/farver_",             "^/bin/macosx/[^/]+/contrib/[^/]+/farver_",
+          "^/src/contrib/labeling_",           "^/bin/windows/contrib/[^/]+/labeling_",           "^/bin/macosx/[^/]+/contrib/[^/]+/labeling_",
+          "^/src/contrib/munsell_",            "^/bin/windows/contrib/[^/]+/munsell_",            "^/bin/macosx/[^/]+/contrib/[^/]+/munsell_",
+          "^/src/contrib/RColorBrewer_",       "^/bin/windows/contrib/[^/]+/RColorBrewer_",       "^/bin/macosx/[^/]+/contrib/[^/]+/RColorBrewer_",
+          "^/src/contrib/viridisLite_",        "^/bin/windows/contrib/[^/]+/viridisLite_",        "^/bin/macosx/[^/]+/contrib/[^/]+/viridisLite_",
+          "^/src/contrib/colorspace_",         "^/bin/windows/contrib/[^/]+/colorspace_",         "^/bin/macosx/[^/]+/contrib/[^/]+/colorspace_",
+          "^/src/contrib/MASS_",               "^/bin/windows/contrib/[^/]+/MASS_",               "^/bin/macosx/[^/]+/contrib/[^/]+/MASS_",
+
+          "^/src/contrib/fuzzyjoin_",          "^/bin/windows/contrib/[^/]+/fuzzyjoin_",          "^/bin/macosx/[^/]+/contrib/[^/]+/fuzzyjoin_",
+          "^/src/contrib/stringdist_",         "^/bin/windows/contrib/[^/]+/stringdist_",         "^/bin/macosx/[^/]+/contrib/[^/]+/stringdist_"
+
+        ]
+      }'
+
+      # -----------------------------------------------------------------------
+      # 11. Create the R hosted repo  (curated/internal packages, admin-uploaded)
+      # -----------------------------------------------------------------------
+      echo "==> Creating r-hosted ..."
+      nexus_create_repo "hosted" "r-hosted" '{
+        "name":    "r-hosted",
+        "online":  true,
+        "storage": {
+          "blobStoreName":               "default",
+          "strictContentTypeValidation": true,
+          "writePolicy":                 "allow"
+        }
+      }' "r"
+
+      # -----------------------------------------------------------------------
+      # 12. Create the R proxy repo  (fetches from CRAN, filtered by routing rule)
+      # -----------------------------------------------------------------------
+      echo "==> Creating r-cran.r-project.org proxy ..."
+      nexus_create_repo "proxy" "r-cran.r-project.org" '{
+        "name":    "r-cran.r-project.org",
+        "online":  true,
+        "storage": {
+          "blobStoreName":               "default",
+          "strictContentTypeValidation": true
+        },
+        "proxy": {
+          "remoteUrl":      "https://cran.r-project.org",
+          "contentMaxAge":  1440,
+          "metadataMaxAge": 1440
+        },
+        "negativeCache": {
+          "enabled":    true,
+          "timeToLive": 1440
+        },
+        "httpClient": {
+          "blocked":   false,
+          "autoBlock": true
+        },
+        "routingRuleName": "r-cran-allowlist"
+      }' "r"
+
+      # -----------------------------------------------------------------------
+      # 13. Create the R group repo  (single URL for install.packages())
+      # -----------------------------------------------------------------------
+      echo "==> Creating r-group ..."
+      nexus_create_repo "group" "r-group" '{
+        "name":    "r-group",
+        "online":  true,
+        "storage": {
+          "blobStoreName":               "default",
+          "strictContentTypeValidation": true
+        },
+        "group": {
+          "memberNames": ["r-hosted", "r-cran.r-project.org"]
+        }
+      }' "r"
+
+      echo "    Waiting for Nexus to generate R privileges ..."
+      sleep 10
+
+      # -----------------------------------------------------------------------
+      # 14. R cleanup policy — remove proxy-cached packages not downloaded in 90 days
+      # -----------------------------------------------------------------------
+      echo "==> Upserting r-proxy-cleanup policy ..."
+      R_POLICY_EXISTS=$(curl -s -u "admin:$ADMIN_PASS" "$NEXUS/cleanup-policies" \
+                          | jq -r '.[] | select(.name=="r-proxy-cleanup") | .name')
+      R_CLEANUP_BODY='{
+        "name":   "r-proxy-cleanup",
+        "format": "r",
+        "notes":  "Remove proxy-cached R packages not downloaded in 90 days",
+        "criteria": {
+          "lastDownloaded": 90
+        }
+      }'
+      if [ -n "$R_POLICY_EXISTS" ]; then
+        http=$(curl -s -o /tmp/nx_resp.txt -w "%%{http_code}" \
+                 -u "admin:$ADMIN_PASS" \
+                 -X PUT "$NEXUS/cleanup-policies/r-proxy-cleanup" \
+                 -H "Content-Type: application/json" -d "$R_CLEANUP_BODY")
+        echo "    Updated R cleanup policy -> $http"
+        [ "$http" = "200" ] || [ "$http" = "204" ] || { cat /tmp/nx_resp.txt; echo; }
+      else
+        http=$(curl -s -o /tmp/nx_resp.txt -w "%%{http_code}" \
+                 -u "admin:$ADMIN_PASS" \
+                 -X POST "$NEXUS/cleanup-policies" \
+                 -H "Content-Type: application/json" -d "$R_CLEANUP_BODY")
+        echo "    Created R cleanup policy -> $http"
+        [ "$http" = "200" ] || [ "$http" = "201" ] || { cat /tmp/nx_resp.txt; echo; }
+      fi
+
+      echo "==> Associating R cleanup policy with r-cran.r-project.org ..."
+      R_PROXY_CONFIG=$(curl -s -u "admin:$ADMIN_PASS" \
+                         "$NEXUS/repositories/r/proxy/r-cran.r-project.org")
+      if [ -n "$R_PROXY_CONFIG" ] && echo "$R_PROXY_CONFIG" | jq -e '.name' > /dev/null 2>&1; then
+        R_UPDATED=$(echo "$R_PROXY_CONFIG" \
+                      | jq '.cleanup = {"policyNames": ["r-proxy-cleanup"]}')
+        nexus_put "repositories/r/proxy/r-cran.r-project.org" "$R_UPDATED"
+      else
+        echo "    r-cran.r-project.org not found — cleanup association skipped (will apply on next run)."
+      fi
+
+      # -----------------------------------------------------------------------
+      # 15. R roles
+      # -----------------------------------------------------------------------
+      echo "==> Upserting R roles ..."
+
+      nexus_upsert_role "r-anonymous-reader" '{
+        "id":          "r-anonymous-reader",
+        "name":        "R Anonymous Reader",
+        "description": "Browse and download allowlisted R packages via r-group (no upload)",
+        "privileges": [
+          "nx-repository-view-r-r-group-browse",
+          "nx-repository-view-r-r-group-read"
+        ],
+        "roles": []
+      }'
+
+      nexus_upsert_role "r-authenticated-deployer" '{
+        "id":          "r-authenticated-deployer",
+        "name":        "R Authenticated Deployer",
+        "description": "Browse/download via r-group; upload new packages to r-hosted",
+        "privileges": [
+          "nx-repository-view-r-r-group-browse",
+          "nx-repository-view-r-r-group-read",
+          "nx-repository-view-r-r-hosted-browse",
+          "nx-repository-view-r-r-hosted-read",
+          "nx-repository-view-r-r-hosted-add"
+        ],
+        "roles": []
+      }'
+
+      # -----------------------------------------------------------------------
+      # 16. Lock the anonymous user to pypi-anonymous-reader + r-anonymous-reader
+      #     (Removes the default nx-anonymous role which allows unrestricted browse)
+      # -----------------------------------------------------------------------
+      echo "==> Assigning reader roles to the anonymous user ..."
       nexus_put "security/users/anonymous" '{
         "userId":        "anonymous",
         "firstName":     "Anonymous",
@@ -442,7 +683,7 @@ resource "null_resource" "configure_nexus" {
         "source":        "default",
         "status":        "active",
         "readOnly":      false,
-        "roles":         ["pypi-anonymous-reader"],
+        "roles":         ["pypi-anonymous-reader", "r-anonymous-reader"],
         "externalRoles": []
       }'
 
@@ -451,6 +692,7 @@ resource "null_resource" "configure_nexus" {
       echo " Nexus OSS ready."
       echo " pip index : ${local.pypi_simple_url}"
       echo " pip upload: ${local.pypi_upload_url}"
+      echo " R repo    : ${local.nexus_base_url}/repository/r-group/"
       echo "============================================================"
     SCRIPT
   }

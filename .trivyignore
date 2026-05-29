@@ -11,3 +11,17 @@
 # vnet_integrated = true and nsg_inbound_source = "<your-corporate-CIDR>" in
 # terraform.tfvars — the NSG rule will then only allow your network.
 AVD-AZU-0047
+
+# AZU-0012: Storage account has no network_rules block / default action is not Deny.
+#
+# Trivy evaluates this statically and flags the storage account because the
+# network_rules block is conditional — it is only applied when
+# vnet_integrated = true AND existing_subnet_id is null (managed VNet mode).
+# In that mode the block IS present with default_action = "Deny", restricting
+# access to the ACI subnet only.
+#
+# In public mode (vnet_integrated = false) the block is intentionally absent:
+# ACI uses the storage account key (a 512-bit secret) to mount the Azure Files
+# share over HTTPS, which is the standard ACI pattern for public deployments.
+# Adding a Deny-all rule would break the file share mount in this mode.
+AZU-0012

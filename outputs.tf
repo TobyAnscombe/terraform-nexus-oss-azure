@@ -47,7 +47,7 @@ output "required_nsg_rule" {
     that subnet's NSG to allow Nexus traffic. Null when using the managed VNet
     (the NSG is created and managed by this module).
   EOF
-  value = var.existing_subnet_id == null ? null : <<-EOF
+  value       = var.existing_subnet_id == null ? null : <<-EOF
 
     Add the following inbound rule to the NSG associated with your subnet:
 

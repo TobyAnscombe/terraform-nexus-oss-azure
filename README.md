@@ -1,18 +1,18 @@
 # Nexus OSS — Azure Container Instance (Terraform)
 
-A hosted Python package repository in Azure UK South with three tiers:
+A hosted Python and R package repository in Azure UK South with three tiers:
 
 | Who | Can do |
 |-----|--------|
-| **Anonymous** (no credentials) | Browse and install allowlisted packages (proxied from PyPI) and anything an admin has uploaded |
-| **Authenticated** (with credentials) | Everything above + upload new packages to the hosted repo |
-| **Admin** | Full Nexus UI access, manage users, roles, and the package allowlist |
-
-One URL for everything: `http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-group/simple/`
+| **Anonymous** (no credentials) | Browse and install allowlisted packages (proxied from PyPI / CRAN) and anything an admin has uploaded |
+| **Authenticated** (with credentials) | Everything above + upload new packages to the hosted repos |
+| **Admin** | Full Nexus UI access, manage users, roles, and the package allowlists |
 
 ---
 
 ## Architecture
+
+### Python (PyPI proxy)
 
 ```
 pip install pandas
@@ -27,22 +27,32 @@ pip install pandas
                 └── pypi-allowlist (routing rule, ALLOW mode)
                         only approved package names pass through
                         everything else → 404
-                              │
-                    ┌─────────▼─────────┐
-                    │  PyPI / PyPI CDN  │
-                    └───────────────────┘
-                              │ cached in
-                    ┌─────────▼─────────┐
-                    │  Azure Files      │
-                    │  nexus-data share │
-                    └───────────────────┘
 ```
+
+### R (CRAN proxy)
+
+```
+install.packages("dplyr")
+      │
+      ▼
+ r-group  (group repo — single URL for all R clients)
+      │
+      ├── r-hosted      (checked first — admin-uploaded / internal packages)
+      │
+      └── r-cran.r-project.org (proxy → https://cran.r-project.org)
+                │
+                └── r-cran-allowlist (routing rule, ALLOW mode)
+                        only approved package names pass through
+                        everything else → 404
+```
+
+Both stacks share the same Azure Files share and Nexus instance. Cached packages remain
+available even if PyPI or CRAN is unreachable.
 
 **Why this layout?**
 
-- `pypi-hosted` is checked first, so internal packages shadow any same-named PyPI package (prevents dependency-confusion attacks).
-- The routing rule on `pypi-pypi.org` enforces the package allowlist — only pre-approved packages are ever fetched from the internet.
-- Cached packages remain available even if PyPI is down.
+- Hosted repos are checked first, so internal packages shadow same-named public packages (prevents dependency-confusion attacks).
+- Routing rules enforce the allowlist — only pre-approved packages are ever fetched from the internet.
 
 ---
 
@@ -56,7 +66,6 @@ pip install pandas
 
 `curl` and `jq` must be present on the machine running `terraform apply`
 (the bootstrap script uses them to configure Nexus over HTTP).
-The bootstrap runs under `/bin/bash` (the system shell); no third-party bash is required.
 
 ---
 
@@ -146,7 +155,7 @@ Before setting `existing_subnet_id`, ensure the target subnet has:
 
 2. **NSG rule** — inbound TCP 8081 from the sources that need to reach Nexus (pip clients, CI runners, etc.). This module does **not** create or modify NSGs on existing subnets.
 
-3. **Reachability** — `terraform apply` must run from a machine that can reach the private IP (on the VPN or in the VNet), so the bootstrap script can configure Nexus over HTTP.
+3. **Reachability** — `terraform apply` must run from a machine that can reach the private IP, so the bootstrap script can configure Nexus over HTTP.
 
 ---
 
@@ -156,7 +165,8 @@ Before setting `existing_subnet_id`, ensure the target subnet has:
 |----------|-------|
 | Web UI | http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081 |
 | pip index URL | http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-group/simple/ |
-| Upload URL | http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-hosted/ |
+| pip upload URL | http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-hosted/ |
+| R repo URL | http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/r-group/ |
 | IP address | 4.250.120.71 |
 | Resource group | rg-nexus-oss |
 | Storage account | stnexusprod3g1xti |
@@ -176,14 +186,6 @@ trusted-host = nexus-oss-3g1xti.uksouth.azurecontainer.io
 EOF
 ```
 
-Verify:
-
-```bash
-pip config list
-# global.index-url='http://nexus-oss-3g1xti...'
-# global.trusted-host='nexus-oss-3g1xti...'
-```
-
 ### Option 2 — Per virtualenv
 
 ```bash
@@ -194,100 +196,166 @@ trusted-host = nexus-oss-3g1xti.uksouth.azurecontainer.io
 EOF
 ```
 
-> **Why `trusted-host`?** The repo runs on plain HTTP. pip refuses unencrypted connections by default — `trusted-host` marks this specific host as safe. Remove this line if you add TLS later.
+> **Why `trusted-host`?** The repo runs on plain HTTP. pip refuses unencrypted connections by default — `trusted-host` marks this host as safe. Remove it if you add TLS later.
+
+---
+
+## Configuring R
+
+### Option 1 — Persistent (all sessions for this user)
+
+Add to `~/.Rprofile` (or `Rprofile.site` for system-wide):
+
+```r
+options(repos = c(
+  NEXUS = "http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/r-group/",
+  CRAN  = "@CRAN@"
+))
+```
+
+The `CRAN = "@CRAN@"` fallback is kept so RStudio's mirror selector still works for any package not yet in the allowlist.
+
+### Option 2 — Per session
+
+```r
+options(repos = c(NEXUS = "http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/r-group/"))
+install.packages("dplyr")
+```
+
+### Option 3 — renv projects
+
+In `.Rprofile` at the project root (renv will pick this up):
+
+```r
+options(repos = c(NEXUS = "http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/r-group/"))
+```
+
+> **RStudio note:** Once `options(repos)` points at Nexus, RStudio's *Packages → Install* panel uses Nexus automatically — no further IDE configuration is needed.
 
 ---
 
 ## Testing the deployment
 
-### 1. Create a virtualenv and install pandas
+### Python — install and cache-hit test
 
 ```bash
-python -m venv .venv && \
-  .venv/bin/pip install pandas \
-    --index-url http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-group/simple/ \
-    --trusted-host nexus-oss-3g1xti.uksouth.azurecontainer.io
-```
+# First install — Nexus fetches from PyPI and caches
+python -m venv .venv && .venv/bin/pip install pandas \
+  --index-url http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-group/simple/ \
+  --trusted-host nexus-oss-3g1xti.uksouth.azurecontainer.io
 
-Expected output — Nexus fetches pandas and its dependencies from PyPI on first install, then caches them:
-
-```
-Collecting pandas
-  Downloading http://nexus-oss-3g1xti.../pandas-2.x.x-...whl
-Collecting numpy...
-...
-Successfully installed pandas-2.x.x numpy-... python-dateutil-... pytz-... six-...
-```
-
-### 2. Confirm the cache — install again (should be instant)
-
-```bash
+# Second install — hits the Nexus cache, noticeably faster
 .venv/bin/pip install pandas \
   --index-url http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-group/simple/ \
   --trusted-host nexus-oss-3g1xti.uksouth.azurecontainer.io
 ```
 
-Second install hits the Nexus cache — no outbound PyPI traffic, noticeably faster.
-
-### 3. Verify the allowlist is blocking unlisted packages
+### Python — verify the allowlist blocks unlisted packages
 
 ```bash
 .venv/bin/pip install flask \
   --index-url http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-group/simple/ \
   --trusted-host nexus-oss-3g1xti.uksouth.azurecontainer.io
+# Expected: ERROR: Could not find a version that satisfies the requirement flask
 ```
 
-Expected: `ERROR: Could not find a version that satisfies the requirement flask` — flask is not on the allowlist so Nexus returns 404.
+### R — install and cache-hit test
 
-### 4. Browse via the web UI
+```r
+options(repos = c(NEXUS = "http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/r-group/"))
+
+# First install — Nexus fetches from CRAN and caches
+install.packages("dplyr")
+
+# Second install — hits the Nexus cache
+install.packages("dplyr")
+```
+
+### R — verify the allowlist blocks unlisted packages
+
+```r
+install.packages("shiny")
+# Expected: Warning: unable to access index for repository ...
+#           package 'shiny' is not available
+```
+
+### Browse via the web UI
 
 1. Go to http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081
 2. Click **Browse** in the left sidebar.
-3. Open **pypi-group** — you will see packages from both `pypi-hosted` and `pypi-pypi.org`.
-4. Open **pypi-pypi.org** — shows packages Nexus has fetched and cached from PyPI so far.
+3. Open **pypi-group** or **r-group** to see available packages.
+4. Open the proxy repo (`pypi-pypi.org` or `r-cran.r-project.org`) to see what has been fetched and cached so far.
 
 ---
 
 ## Package allowlist
 
-The routing rule `pypi-allowlist` controls which packages the proxy will fetch from PyPI.
-Packages already uploaded to `pypi-hosted` are always available regardless of the allowlist.
+Routing rules (`pypi-allowlist`, `r-cran-allowlist`) control which packages each proxy will fetch.
+Packages uploaded to the hosted repos (`pypi-hosted`, `r-hosted`) are always available regardless of the allowlist.
 
-### Allowlisted packages (managed in `bootstrap.tf`)
+### Python allowlist (`bootstrap.tf` → `pypi-allowlist`)
 
 | Category | Packages |
 |----------|---------|
-| **Build tools** | pip, setuptools, wheel, twine, build |
-| **Core** | numpy, pandas, scipy, polars |
-| **Visualisation** | matplotlib, seaborn, plotly, bokeh, altair, kaleido |
-| **ML / Stats** | scikit-learn, statsmodels, xgboost, lightgbm |
-| **Data I/O** | openpyxl, xlrd, xlsxwriter, pyarrow, fastparquet, sqlalchemy, psycopg2-binary, pymysql, pyodbc |
-| **Utilities** | tqdm, joblib, numba, dask, requests, httpx, aiohttp, python-dateutil, pytz, tzdata, six, certifi, charset-normalizer, idna, urllib3, packaging, click, pydantic, pydantic-core, typing-extensions, attrs, annotated-types |
+| **Toolchain** | pip, setuptools, wheel, twine, build, poetry, pytest |
+| **Core data** | numpy, pandas, scipy, polars, pyarrow |
+| **Distributed** | dask, pyspark |
+| **Visualisation** | matplotlib, seaborn, plotly, bokeh, altair, kaleido, missingno |
+| **ML / Stats** | scikit-learn, xgboost, lightgbm, statsmodels, lifelines, pingouin |
+| **MLOps** | mlflow |
+| **Explainability** | shap, lime, eli5 |
+| **Data quality** | pandera, great-expectations |
+| **I/O & storage** | openpyxl, xlrd, xlsxwriter, fastparquet, sqlalchemy, psycopg2-binary, pymysql, pyodbc |
 | **Jupyter** | jupyter, jupyterlab, ipython, ipykernel, notebook, nbformat, nbconvert, ipywidgets, widgetsnbextension |
-| **Data quality** | pandera |
+| **Runtime utilities** | joblib, numba, tqdm, requests, httpx, aiohttp, python-dateutil, pytz, tzdata, six, certifi, charset-normalizer, idna, urllib3, packaging, click, pydantic, pydantic-core, typing-extensions, attrs, annotated-types |
 
-### Adding a new package to the allowlist
+### R allowlist (`bootstrap.tf` → `r-cran-allowlist`)
 
-1. Open `bootstrap.tf`.
-2. In the `nexus_upsert_routing_rule` call, add two lines for the new package (one for the index, one for the file download):
+| Category | Packages |
+|----------|---------|
+| **Toolchain** | rlang, vctrs, lifecycle, cli, glue, magrittr, generics, R6, Rcpp, withr, pkgconfig, ellipsis |
+| **Tidyverse plumbing** | tibble, purrr, readr, forcats, hms, vroom, tidyselect, pillar, fansi, utf8, crayon, bit64, bit |
+| **Data wrangling** | tidyverse, dplyr, tidyr, stringr, stringi, data.table, lubridate, broom, modelr |
+| **I/O & formats** | haven, readxl, openxlsx, rio, foreign, cellranger, zip, jsonlite, curl, httr |
+| **Visualisation** | ggplot2, scales, gtable, isoband, farver, labeling, munsell, RColorBrewer, viridisLite, colorspace, MASS |
+| **String matching** | fuzzyjoin, stringdist |
 
-```
-"^/simple/your-package-name(/.*)?$",  "^/packages/your-package-name(/.*)?$",
-```
+> **Tidyverse note:** `tidyverse` is a meta-package that installs ~30 sub-packages. The tidyverse plumbing row covers the transitive dependencies most likely to be pulled. If an install fails with a 404 on an unlisted dependency, add it and re-apply (see below).
 
-3. Bump `allowlist_version` in the `triggers` block (e.g. `"3"` → `"4"`).
+### Adding a new Python package
+
+1. Open `bootstrap.tf`, find the `nexus_upsert_routing_rule "pypi-allowlist"` call.
+2. Add two matchers for the new package:
+
+   ```
+   "^/simple/your-package(/.*)?$",  "^/packages/your-package(/.*)?$",
+   ```
+
+3. Bump `allowlist_version` in the `triggers` block (e.g. `"6"` → `"7"`).
 4. Run `terraform apply` — the routing rule updates in-place, no infrastructure changes.
 
-> **Package name normalisation:** PyPI normalises names to lowercase with hyphens. Use `scikit-learn` not `scikit_learn`, `psycopg2-binary` not `psycopg2_binary`.
+> **Name normalisation:** PyPI normalises names to lowercase with hyphens. Use `scikit-learn` not `scikit_learn`.
+
+### Adding a new R package
+
+1. Open `bootstrap.tf`, find the `nexus_upsert_routing_rule "r-cran-allowlist"` call.
+2. Add three matchers for the new package (source tarball + Windows binary + macOS binary):
+
+   ```
+   "^/src/contrib/your-package_",
+   "^/bin/windows/contrib/[^/]+/your-package_",
+   "^/bin/macosx/[^/]+/contrib/[^/]+/your-package_"
+   ```
+
+   If the package name contains a `.` (e.g. `data.table`), escape it as `data\.table` in the regex.
+
+3. Bump `allowlist_version` in the `triggers` block and run `terraform apply`.
 
 ---
 
-## Uploading packages to the hosted repo
+## Uploading packages to the hosted repos
 
-Any user with the `pypi-authenticated-deployer` role (or admin) can publish packages.
-Once uploaded, the package is immediately available to all users including anonymous.
-
-### Option 1 — Grab from PyPI and push to Nexus (most common)
+### Python — push to pypi-hosted
 
 ```bash
 # Download from PyPI
@@ -298,28 +366,29 @@ twine upload \
   --repository-url http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-hosted/ \
   -u admin -p 'YOUR_PASSWORD' \
   /tmp/nx-upload/*
-
-# Clean up
 rm -rf /tmp/nx-upload
 ```
 
-### Option 2 — Web UI upload
-
-1. Log in to http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081 as `admin`.
-2. Click **Upload** in the left sidebar (or **Browse → pypi-hosted → Upload component**).
-3. Select the `.whl` or `.tar.gz` and click **Upload**.
-
-### Option 3 — Publish a package you built yourself
+Or build and publish your own package:
 
 ```bash
-# Build
 python -m build
-
-# Publish
 twine upload \
   --repository-url http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-hosted/ \
   -u YOUR_USER -p YOUR_PASSWORD \
   dist/*
+```
+
+### R — push to r-hosted
+
+Use the **web UI**: log in → **Browse → r-hosted → Upload component**, then select the `.tar.gz` source package or binary.
+
+Or use the Nexus REST API:
+
+```bash
+curl -u admin:YOUR_PASSWORD \
+  -F "r.asset=@/path/to/package_1.0.0.tar.gz;type=application/octet-stream" \
+  http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/service/rest/v1/components?repository=r-hosted
 ```
 
 ---
@@ -328,8 +397,14 @@ twine upload \
 
 1. Log in to http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081 as `admin`.
 2. **Administration → Security → Users → Create local user**.
-3. Assign the `pypi-authenticated-deployer` role for read + upload access.
-4. Leave without a role for anonymous (read-only) access.
+3. Assign roles as appropriate:
+
+   | Role | Access |
+   |------|--------|
+   | `pypi-anonymous-reader` | Browse + install Python packages from pypi-group |
+   | `pypi-authenticated-deployer` | Above + upload to pypi-hosted |
+   | `r-anonymous-reader` | Browse + install R packages from r-group |
+   | `r-authenticated-deployer` | Above + upload to r-hosted |
 
 ---
 
@@ -337,22 +412,20 @@ twine upload \
 
 | Risk | Mitigation in place |
 |------|-------------------|
-| Typosquatting | Allowlist — only approved package names served by the proxy |
-| Dependency confusion | `pypi-hosted` is checked before the proxy; internal packages win on name conflict |
-| Compromised package version | Pin exact versions in `requirements.txt`; use `pip-compile --generate-hashes` |
+| Typosquatting | Allowlist — only approved package names served by the proxies |
+| Dependency confusion | Hosted repos checked before proxies; internal packages win on name conflict |
+| Compromised package version | Pin exact versions; use `pip-compile --generate-hashes` for Python |
 | Known CVEs | Run `pip-audit -r requirements.txt` in CI (not enforced by Nexus OSS) |
-| PyPI outage | Nexus caches every download — previously-fetched packages remain available |
+| PyPI / CRAN outage | Nexus caches every download — previously-fetched packages remain available |
 
-### Scanning for vulnerabilities with pip-audit
+### Scanning Python dependencies for CVEs
 
 ```bash
 pip install pip-audit
 pip-audit -r requirements.txt
 ```
 
-Run this in your CI pipeline on every pull request and as a nightly scheduled job.
-
-### Hash-pinning requirements (strongest protection)
+### Hash-pinning Python requirements (strongest protection)
 
 ```bash
 pip install pip-tools
@@ -364,15 +437,19 @@ pip install --require-hashes -r requirements.txt  # fails if any file is tampere
 
 ## Troubleshooting
 
-### pip returns 404 for a package
+### pip / install.packages returns 404 for a package
 
 The package is not on the allowlist. Either:
 - Add it to the allowlist in `bootstrap.tf` and `terraform apply`, **or**
-- Upload it directly to `pypi-hosted` via twine or the web UI.
+- Upload it directly to the hosted repo via the web UI or API.
 
-### pip returns 404 for a package that IS on the allowlist
+### Python package on the allowlist still returns 404
 
 The routing rule requires two matchers per package (`/simple/` and `/packages/`). Check that both are present in `bootstrap.tf`.
+
+### R package on the allowlist still fails to install
+
+The routing rule requires three matchers per package (source + Windows binary + macOS binary paths). Check all three are present. Also verify that dot characters in the package name are escaped as `\.` in the regex.
 
 ### Container logs
 
@@ -385,17 +462,12 @@ az container logs \
 
 ### Bootstrap can't authenticate
 
-Because `NEXUS_SECURITY_RANDOMPASSWORD=false` is set, Nexus does **not** write a random
-`/nexus-data/admin.password` file on first boot — it starts with the fixed default password
-`admin123`. The bootstrap immediately replaces that with `var.admin_password`.
+Because `NEXUS_SECURITY_RANDOMPASSWORD=false` is set, Nexus starts with the fixed default password `admin123`. The bootstrap immediately replaces that with `var.admin_password`.
 
-If the bootstrap can't authenticate, the most likely cause is a partial previous run where
-the password was already changed to something different from `var.admin_password`. Fix:
+If the bootstrap can't authenticate, the most likely cause is a partial previous run where the password was already changed to something other than `var.admin_password`. Fix:
 
-1. Confirm the password currently set in `terraform.tfvars` is correct and run `terraform apply`
-   again — the bootstrap is idempotent and will detect the right credentials.
-2. If the container was manually reset or the state is unknown, exec into the container to
-   check whether the password file exists:
+1. Confirm the password in `terraform.tfvars` is correct and run `terraform apply` again — the bootstrap is idempotent.
+2. If the state is unknown, exec into the container:
 
 ```bash
 az container exec \
@@ -405,14 +477,12 @@ az container exec \
   --exec-command "ls /nexus-data/admin.password 2>/dev/null && cat /nexus-data/admin.password || echo 'no password file — default admin123 is active'"
 ```
 
-   - If the file is absent: Nexus is using `admin123`. Update `admin_password = "admin123"` in
-     `terraform.tfvars`, run `terraform apply` to let bootstrap set your real password, then
-     restore `admin_password` to your desired value and apply once more.
-   - If the file is present: use the file's contents as `admin_password` and apply.
+   - File absent → Nexus is using `admin123`. Set `admin_password = "admin123"` in tfvars, apply to let bootstrap set your real password, then restore and apply again.
+   - File present → use the file contents as `admin_password` and apply.
 
 ### Re-run bootstrap without replacing infrastructure
 
-Bump `allowlist_version` in `bootstrap.tf` triggers block and run `terraform apply`.
+Bump `allowlist_version` in the `bootstrap.tf` triggers block and run `terraform apply`.
 The bootstrap script is fully idempotent — safe to re-run at any time.
 
 ---
@@ -434,7 +504,7 @@ The bootstrap script is fully idempotent — safe to re-run at any time.
 ## Teardown
 
 ```bash
-# Optional: snapshot the file share first (preserves cached packages)
+# Optional: snapshot the file share first (preserves all cached packages)
 az storage share snapshot \
   --account-name <storage-account-name> \
   --name nexus-data
@@ -468,25 +538,32 @@ az group delete --name rg-nexus-tf-state
 ```
 .
 ├── providers.tf               azurerm / null / random / time
-├── variables.tf               All inputs
-├── locals.tf                  URLs, JVM sizing
+├── variables.tf               All inputs (including existing_subnet_id)
+├── locals.tf                  URLs, JVM sizing, use_vnet flag
 ├── main.tf                    Resource Group + random suffix
 ├── storage.tf                 Storage Account + nexus-data File Share
-├── network.tf                 VNet + ACI subnet + NSG (always created; ACI joins when vnet_integrated = true)
+├── network.tf                 VNet + ACI subnet + NSG (conditional on existing_subnet_id)
 ├── container.tf               ACI Container Group (single Nexus container)
 ├── bootstrap.tf               Waits for startup, configures Nexus via REST API
-│                                - routing rule (pypi-allowlist)
-│                                - pypi-hosted  (local / admin-uploaded packages)
-│                                - pypi-pypi.org (proxy to PyPI, allowlist applied)
-│                                - pypi-group   (group: hosted + proxy, single URL)
-│                                - roles + anonymous user assignment
-├── outputs.tf                 pip URLs, twine command, pip.conf snippets
+│                                Python stack:
+│                                  pypi-allowlist routing rule
+│                                  pypi-hosted / pypi-pypi.org proxy / pypi-group
+│                                  pypi-proxy-cleanup policy (90-day)
+│                                  pypi-anonymous-reader / pypi-authenticated-deployer roles
+│                                R stack:
+│                                  r-cran-allowlist routing rule
+│                                  r-hosted / r-cran.r-project.org proxy / r-group
+│                                  r-proxy-cleanup policy (90-day)
+│                                  r-anonymous-reader / r-authenticated-deployer roles
+│                                  anonymous user locked to both reader roles
+├── outputs.tf                 pip URLs, twine command, pip.conf snippets, NSG rule output
 ├── terraform.tfvars.example
-├── backend.hcl.example        Template for backend.hcl (git-ignored, generated by create-backend)
+├── backend.hcl.example        Template for backend.hcl (git-ignored)
 ├── scripts/
 │   ├── create-backend.sh      Bash: provision remote state storage + write backend.hcl
 │   └── create-backend.ps1     PowerShell: same as above for Windows
 └── .github/
     └── workflows/
-        └── ci.yml             CI: terraform fmt/validate, TFLint, Trivy security scan
+        └── ci.yml             CI: calls reusable terraform-ci.yml from TobyAnscombe/github-actions
+                                   (terraform fmt/validate, TFLint, Trivy security scan)
 ```

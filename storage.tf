@@ -23,18 +23,19 @@ resource "azurerm_storage_account" "main" {
     }
   }
 
-  # Network firewall: when VNet-integrated, restrict storage access to the ACI
-  # subnet so the account is not reachable from the public internet.
-  # Requires Microsoft.Storage service endpoint on snet-aci (set in network.tf).
+  # Network firewall: restrict storage to the managed ACI subnet when using the
+  # built-in VNet (vnet_integrated = true, existing_subnet_id not set).
+  # The managed subnet has Microsoft.Storage service endpoint (network.tf), which
+  # is required for the subnet-based allowlist to work.
   #
-  # When vnet_integrated = false (public mode) the block is omitted — ACI reaches
-  # storage over the internet using the storage account key, which is the standard
-  # ACI public-mode pattern.
+  # When using an existing subnet (existing_subnet_id is set), this block is
+  # skipped. Add Microsoft.Storage to that subnet's service_endpoints yourself,
+  # then you can add a manual network rule via the Azure Portal or CLI.
   dynamic "network_rules" {
-    for_each = var.vnet_integrated ? [1] : []
+    for_each = (var.vnet_integrated && var.existing_subnet_id == null) ? [1] : []
     content {
       default_action             = "Deny"
-      virtual_network_subnet_ids = [azurerm_subnet.aci.id]
+      virtual_network_subnet_ids = [local.aci_subnet_id]
       bypass                     = ["AzureServices"]
     }
   }

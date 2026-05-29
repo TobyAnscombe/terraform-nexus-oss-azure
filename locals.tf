@@ -2,10 +2,22 @@ locals {
   storage_account_name = "stnexus${var.environment}${random_string.suffix.result}"
   dns_name_label       = "${var.dns_name_label_prefix}-${random_string.suffix.result}"
 
+  # True when ACI should receive a private IP (no public DNS label).
+  # Triggered by either vnet_integrated = true OR an existing_subnet_id being supplied.
+  use_vnet = var.vnet_integrated || var.existing_subnet_id != null
+
+  # Subnet ID ACI joins when use_vnet = true.
+  # Prefers the caller-supplied existing subnet; falls back to the managed subnet.
+  aci_subnet_id = (
+    var.existing_subnet_id != null
+    ? var.existing_subnet_id
+    : try(azurerm_subnet.aci[0].id, null)
+  )
+
   # The hostname used in every URL.
   # Public mode : Azure-assigned FQDN  (e.g. nexus-oss-3g1xti.uksouth.azurecontainer.io)
   # Private mode: private IP assigned to the container in the VNet subnet
-  nexus_host = var.vnet_integrated ? azurerm_container_group.nexus.ip_address : azurerm_container_group.nexus.fqdn
+  nexus_host = local.use_vnet ? azurerm_container_group.nexus.ip_address : azurerm_container_group.nexus.fqdn
 
   nexus_base_url = "http://${local.nexus_host}:8081"
   nexus_api_url  = "${local.nexus_base_url}/service/rest/v1"

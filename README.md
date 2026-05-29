@@ -86,21 +86,67 @@ Both scripts create the storage account, blob container, and write `backend.hcl`
 
 ## Deploy
 
+### Option A — Public (internet-accessible, default)
+
 ```bash
-az login
-az account set --subscription "<subscription-id>"
-
-# First time only — if you haven't run create-backend.sh yet:
-./scripts/create-backend.sh
-
 cp terraform.tfvars.example terraform.tfvars
-# edit terraform.tfvars — set admin_password at minimum
+# edit terraform.tfvars — set admin_password; leave vnet_integrated = false
+
+terraform init -backend-config=backend.hcl
+terraform apply
+```
+
+### Option B — Managed private VNet
+
+```bash
+cp terraform.tfvars.example terraform.tfvars
+# set admin_password, vnet_integrated = true, nsg_inbound_source = "<your-cidr>"
+# run terraform apply from a machine on the VPN / ExpressRoute
+
+terraform init -backend-config=backend.hcl
+terraform apply
+```
+
+### Option C — Existing subnet
+
+```bash
+cp terraform.tfvars.example terraform.tfvars
+# set admin_password
+# set existing_subnet_id = "/subscriptions/.../subnets/<name>"
+# (vnet_integrated and nsg_inbound_source are ignored)
+# run terraform apply from a machine that can reach the subnet's private IP
 
 terraform init -backend-config=backend.hcl
 terraform apply
 ```
 
 **Total time: ~6–8 minutes** (Nexus initialises its database on first boot).
+
+---
+
+## Networking modes
+
+| Mode | `existing_subnet_id` | `vnet_integrated` | ACI access | Managed VNet |
+|------|----------------------|-------------------|------------|--------------|
+| Public | `null` | `false` | Public IP + DNS label | Created (unused) |
+| Managed private | `null` | `true` | Private IP in snet-aci | Created and used |
+| Existing subnet | `<resource-id>` | ignored | Private IP in your subnet | **Not created** |
+
+### Existing subnet prerequisites
+
+Before setting `existing_subnet_id`, ensure the target subnet has:
+
+1. **Delegation** — `Microsoft.ContainerInstance/containerGroups`
+
+   ```bash
+   az network vnet subnet update \
+     --resource-group <rg> --vnet-name <vnet> --name <subnet> \
+     --delegations Microsoft.ContainerInstance/containerGroups
+   ```
+
+2. **NSG rule** — inbound TCP 8081 from the sources that need to reach Nexus (pip clients, CI runners, etc.). This module does **not** create or modify NSGs on existing subnets.
+
+3. **Reachability** — `terraform apply` must run from a machine that can reach the private IP (on the VPN or in the VNet), so the bootstrap script can configure Nexus over HTTP.
 
 ---
 

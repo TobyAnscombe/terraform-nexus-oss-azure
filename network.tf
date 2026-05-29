@@ -1,8 +1,13 @@
 ###############################################################################
-# Network — VNet + ACI subnet + NSG
+# Managed Network — VNet + ACI subnet + NSG
 #
-# The VNet and subnet are ALWAYS created so the private-deployment path is
-# ready whenever you need it.  ACI only joins the VNet when:
+# These resources are created ONLY when existing_subnet_id is NOT set.
+# When existing_subnet_id is provided, all four resources are skipped and ACI
+# is placed directly into the caller-supplied subnet.
+#
+# When managed networking is used, the VNet and subnet are ALWAYS provisioned
+# so the private-deployment path is ready whenever you need it. ACI only joins
+# the subnet when:
 #
 #   vnet_integrated = true   (in terraform.tfvars)
 #
@@ -19,7 +24,7 @@
 #   - Bootstrap (and all pip traffic) must come from a host that can reach
 #     the private IP — run terraform apply from a machine on the VPN.
 #
-# Going private — step-by-step:
+# Going private with the managed VNet — step-by-step:
 #   1. Connect your corporate network (VPN Gateway or ExpressRoute) to this VNet.
 #   2. Set vnet_integrated       = true          in terraform.tfvars
 #      Set nsg_inbound_source    = "10.x.x.x/y"  (your corporate CIDR)
@@ -28,6 +33,8 @@
 ###############################################################################
 
 resource "azurerm_virtual_network" "main" {
+  count = var.existing_subnet_id == null ? 1 : 0
+
   name                = "vnet-${var.environment}-nexus"
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
@@ -39,9 +46,11 @@ resource "azurerm_virtual_network" "main" {
 # ACI subnet — must be delegated to Microsoft.ContainerInstance/containerGroups
 # ---------------------------------------------------------------------------
 resource "azurerm_subnet" "aci" {
+  count = var.existing_subnet_id == null ? 1 : 0
+
   name                 = "snet-aci"
   resource_group_name  = azurerm_resource_group.main.name
-  virtual_network_name = azurerm_virtual_network.main.name
+  virtual_network_name = azurerm_virtual_network.main[0].name
   address_prefixes     = [var.aci_subnet_prefix]
 
   # Microsoft.Storage service endpoint enables the storage account network rule
@@ -66,6 +75,8 @@ resource "azurerm_subnet" "aci" {
 # To lock down: set nsg_inbound_source to your corporate CIDR in tfvars.
 # ---------------------------------------------------------------------------
 resource "azurerm_network_security_group" "aci" {
+  count = var.existing_subnet_id == null ? 1 : 0
+
   name                = "nsg-${var.environment}-aci-nexus"
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
@@ -88,6 +99,8 @@ resource "azurerm_network_security_group" "aci" {
 }
 
 resource "azurerm_subnet_network_security_group_association" "aci" {
-  subnet_id                 = azurerm_subnet.aci.id
-  network_security_group_id = azurerm_network_security_group.aci.id
+  count = var.existing_subnet_id == null ? 1 : 0
+
+  subnet_id                 = azurerm_subnet.aci[0].id
+  network_security_group_id = azurerm_network_security_group.aci[0].id
 }

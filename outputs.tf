@@ -14,8 +14,8 @@ output "nexus_host" {
 }
 
 output "container_group_fqdn" {
-  description = "Public FQDN of the Azure Container Group (null when vnet_integrated = true)."
-  value       = var.vnet_integrated ? null : azurerm_container_group.nexus.fqdn
+  description = "Public FQDN of the Azure Container Group (null in VNet mode)."
+  value       = local.use_vnet ? null : azurerm_container_group.nexus.fqdn
 }
 
 output "container_group_ip" {
@@ -32,13 +32,13 @@ output "storage_account_name" {
 }
 
 output "vnet_name" {
-  description = "Name of the Virtual Network (always created, used by ACI when vnet_integrated = true)."
-  value       = azurerm_virtual_network.main.name
+  description = "Name of the managed Virtual Network (null when existing_subnet_id is set)."
+  value       = var.existing_subnet_id == null ? azurerm_virtual_network.main[0].name : null
 }
 
 output "aci_subnet_id" {
-  description = "Resource ID of the ACI subnet. Use this when peering or adding a VPN Gateway."
-  value       = azurerm_subnet.aci.id
+  description = "Resource ID of the subnet ACI is (or will be) attached to."
+  value       = local.aci_subnet_id
 }
 
 # ---------------------------------------------------------------------------

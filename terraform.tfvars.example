@@ -21,12 +21,18 @@ nexus_data_share_quota_gb = 100
 # ── Networking ────────────────────────────────────────────────────────────────
 dns_name_label_prefix = "nexus-oss"
 
-# vnet_integrated = false  → public IP + DNS label (default, internet-accessible)
-# vnet_integrated = true   → private IP in snet-aci, no public DNS
-#                            requires VPN/ExpressRoute or jumpbox to reach Nexus
+# Option A — Public (default): internet-accessible, Azure-assigned DNS label
 vnet_integrated    = false
-nsg_inbound_source = "*"   # restrict to your corporate CIDR when vnet_integrated = true
-                            # e.g. "203.0.113.0/24"
+nsg_inbound_source = "*"
+
+# Option B — Managed private VNet: ACI deployed into a new VNet + subnet
+# vnet_integrated    = true
+# nsg_inbound_source = "10.0.0.0/8"  # your corporate / VPN CIDR
+
+# Option C — Existing subnet: attach to a subnet in an existing VNet/hub
+# The subnet must already be delegated to Microsoft.ContainerInstance/containerGroups.
+# vnet_integrated and nsg_inbound_source are ignored when existing_subnet_id is set.
+# existing_subnet_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-hub/providers/Microsoft.Network/virtualNetworks/vnet-hub/subnets/snet-nexus"
 
 # ── Optional tags ─────────────────────────────────────────────────────────────
 tags = {

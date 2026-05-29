@@ -15,9 +15,9 @@ resource "azurerm_container_group" "nexus" {
   location            = azurerm_resource_group.main.location
 
   os_type         = "Linux"
-  ip_address_type = var.vnet_integrated ? "Private" : "Public"
-  dns_name_label  = var.vnet_integrated ? null : local.dns_name_label
-  subnet_ids      = var.vnet_integrated ? [azurerm_subnet.aci.id] : null
+  ip_address_type = local.use_vnet ? "Private" : "Public"
+  dns_name_label  = local.use_vnet ? null : local.dns_name_label
+  subnet_ids      = local.use_vnet ? [local.aci_subnet_id] : null
 
   restart_policy = "Always"
 

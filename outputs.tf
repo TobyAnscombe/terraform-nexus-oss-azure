@@ -41,6 +41,42 @@ output "aci_subnet_id" {
   value       = local.aci_subnet_id
 }
 
+output "required_nsg_rule" {
+  description = <<-EOF
+    When using an existing subnet, this is the NSG rule that must be present on
+    that subnet's NSG to allow Nexus traffic. Null when using the managed VNet
+    (the NSG is created and managed by this module).
+  EOF
+  value = var.existing_subnet_id == null ? null : <<-EOF
+
+    Add the following inbound rule to the NSG associated with your subnet:
+
+      Name                : allow-nexus-8081-inbound
+      Priority            : (choose an available priority, e.g. 100)
+      Protocol            : TCP
+      Source port ranges  : *
+      Destination port    : 8081
+      Source              : <CIDR of your pip clients / CI runners>
+      Destination         : *
+      Action              : Allow
+
+    Azure CLI:
+      az network nsg rule create \
+        --resource-group  <nsg-resource-group> \
+        --nsg-name        <nsg-name> \
+        --name            allow-nexus-8081-inbound \
+        --priority        100 \
+        --protocol        Tcp \
+        --direction       Inbound \
+        --source-address-prefixes  '*' \
+        --destination-port-ranges  8081 \
+        --access          Allow
+
+    Nexus private IP : ${azurerm_container_group.nexus.ip_address}
+    Nexus URL        : ${local.nexus_base_url}
+  EOF
+}
+
 # ---------------------------------------------------------------------------
 # The two URLs everything needs
 # ---------------------------------------------------------------------------

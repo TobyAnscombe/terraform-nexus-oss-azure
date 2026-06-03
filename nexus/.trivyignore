@@ -1,0 +1,27 @@
+# Trivy IaC scan — accepted risks
+#
+# Each entry suppresses a specific finding. Remove an entry only when the
+# underlying issue has been addressed in the Terraform code.
+
+# AVD-AZU-0047: Network security group allows inbound from the internet.
+#
+# Intentional: the NSG on snet-aci allows port 8081 from nsg_inbound_source
+# (default "*"). This is by design for internet-accessible public deployments
+# where Nexus is the pip index for external users. For private deployments set
+# vnet_integrated = true and nsg_inbound_source = "<your-corporate-CIDR>" in
+# terraform.tfvars — the NSG rule will then only allow your network.
+AVD-AZU-0047
+
+# AZU-0012: Storage account has no network_rules block / default action is not Deny.
+#
+# Trivy evaluates this statically and flags the storage account because the
+# network_rules block is conditional — it is only applied when
+# vnet_integrated = true AND existing_subnet_id is null (managed VNet mode).
+# In that mode the block IS present with default_action = "Deny", restricting
+# access to the ACI subnet only.
+#
+# In public mode (vnet_integrated = false) the block is intentionally absent:
+# ACI uses the storage account key (a 512-bit secret) to mount the Azure Files
+# share over HTTPS, which is the standard ACI pattern for public deployments.
+# Adding a Deny-all rule would break the file share mount in this mode.
+AZU-0012

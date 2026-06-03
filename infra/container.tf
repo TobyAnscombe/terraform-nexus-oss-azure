@@ -34,8 +34,8 @@ resource "azurerm_container_group" "nexus" {
 
     environment_variables = {
       # Use a fixed initial password ('admin123') rather than a random one
-      # written to /nexus-data/admin.password.  The bootstrap script
-      # replaces it immediately with var.admin_password.
+      # written to /nexus-data/admin.password.  Phase 2 (nexus/) sets the real
+      # password via the datadrivers/nexus provider.
       NEXUS_SECURITY_RANDOMPASSWORD = "false"
 
       INSTALL4J_ADD_VM_PARAMS = local.nexus_jvm_opts
@@ -66,4 +66,12 @@ resource "azurerm_container_group" "nexus" {
   }
 
   tags = local.common_tags
+}
+
+# Gate the nexus_base_url output until Nexus has had time to initialise its
+# database.  Phase 2 reads this output via remote state; the depends_on ensures
+# the nexus provider in nexus/ cannot be configured until this sleep completes.
+resource "time_sleep" "nexus_ready" {
+  depends_on      = [azurerm_container_group.nexus]
+  create_duration = "2m"
 }

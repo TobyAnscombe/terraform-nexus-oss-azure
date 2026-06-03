@@ -35,26 +35,6 @@ variable "tags" {
 }
 
 # ---------------------------------------------------------------------------
-# Credentials
-# ---------------------------------------------------------------------------
-
-variable "admin_password" {
-  description = <<-EOF
-    Nexus admin password set during first-boot bootstrap.
-    The container starts with default password 'admin123'
-    (NEXUS_SECURITY_RANDOMPASSWORD=false); the bootstrap replaces it immediately.
-    Must be ≥ 8 characters. SENSITIVE — never commit to source control.
-  EOF
-  type        = string
-  sensitive   = true
-
-  validation {
-    condition     = length(var.admin_password) >= 8
-    error_message = "admin_password must be at least 8 characters."
-  }
-}
-
-# ---------------------------------------------------------------------------
 # Container sizing
 # ---------------------------------------------------------------------------
 

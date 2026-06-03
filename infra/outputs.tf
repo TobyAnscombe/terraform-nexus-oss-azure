@@ -13,6 +13,15 @@ output "nexus_host" {
   value       = local.nexus_host
 }
 
+# Gated URL consumed by Phase 2 (nexus/) via terraform_remote_state.
+# The depends_on ensures this output is not written to state until Nexus has
+# finished initialising — preventing the nexus provider from connecting too early.
+output "nexus_base_url" {
+  description = "Nexus base URL — only available after the 2-minute startup wait."
+  value       = local.nexus_base_url
+  depends_on  = [time_sleep.nexus_ready]
+}
+
 output "container_group_fqdn" {
   description = "Public FQDN of the Azure Container Group (null in VNet mode)."
   value       = local.use_vnet ? null : azurerm_container_group.nexus.fqdn

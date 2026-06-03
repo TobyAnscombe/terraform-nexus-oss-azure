@@ -1,8 +1,7 @@
-# Copy to terraform.tfvars and fill in your values.
+# Copy to infra/terraform.tfvars and fill in your values.
 # NEVER commit terraform.tfvars — it is git-ignored.
-
-# ── Required ──────────────────────────────────────────────────────────────────
-admin_password = "Ch@ngeMe123!"   # min 8 chars
+#
+# Nexus credentials and allowlists are configured in nexus/terraform.tfvars.
 
 # ── Resource placement ────────────────────────────────────────────────────────
 resource_group_name = "rg-nexus-oss"

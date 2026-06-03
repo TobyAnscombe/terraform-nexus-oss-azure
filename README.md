@@ -62,10 +62,21 @@ available even if PyPI or CRAN is unreachable.
 |------|-------|
 | Terraform ≥ 1.5 | `brew install terraform` |
 | Azure CLI | `brew install azure-cli` |
-| curl + jq | `brew install jq` |
 
-`curl` and `jq` must be present on the machine running `terraform apply`
-(the bootstrap script uses them to configure Nexus over HTTP).
+---
+
+## Two-phase layout
+
+The repository uses a two-phase Terraform structure:
+
+| Phase | Directory | Manages |
+|-------|-----------|---------|
+| **1 — infra** | `infra/` | Azure Container Instance, Storage Account, VNet / NSG, Resource Group |
+| **2 — nexus** | `nexus/` | Nexus repositories, routing rules, roles, anonymous access |
+
+Phase 2 reads the Nexus URL from Phase 1's remote state. A `time_sleep` resource in Phase 1
+ensures the `nexus_base_url` output is only written after a 2-minute startup wait, so Phase 2
+cannot initialise the nexus provider before Nexus is ready.
 
 ---
 
@@ -87,49 +98,66 @@ az account set --subscription "<subscription-id>"
 .\scripts\create-backend.ps1
 ```
 
-Both scripts create the storage account, blob container, and write `backend.hcl` in the repo root.
+Both scripts create the storage account, blob container, and write `backend.hcl` in the repo root. Copy and adjust the key for each phase:
 
-`backend.hcl` is git-ignored — it contains deployment-specific values and is regenerated locally by each team member. See [backend.hcl.example](backend.hcl.example) for the format.
+```bash
+sed 's/nexus-oss.terraform.tfstate/infra.tfstate/' backend.hcl > infra/backend.hcl
+sed 's/nexus-oss.terraform.tfstate/nexus.tfstate/'  backend.hcl > nexus/backend.hcl
+```
+
+`backend.hcl` is git-ignored. See [infra/backend.hcl.example](infra/backend.hcl.example) and [nexus/backend.hcl.example](nexus/backend.hcl.example) for the format.
 
 ---
 
 ## Deploy
 
-### Option A — Public (internet-accessible, default)
+### Phase 1 — Infrastructure
 
 ```bash
+cd infra
 cp terraform.tfvars.example terraform.tfvars
-# edit terraform.tfvars — set admin_password; leave vnet_integrated = false
+# edit terraform.tfvars as needed
 
 terraform init -backend-config=backend.hcl
 terraform apply
 ```
 
-### Option B — Managed private VNet
+**Total time: ~5–7 minutes** (includes a 2-minute startup wait for Nexus).
+
+### Phase 2 — Nexus configuration
 
 ```bash
+cd nexus
 cp terraform.tfvars.example terraform.tfvars
-# set admin_password, vnet_integrated = true, nsg_inbound_source = "<your-cidr>"
-# run terraform apply from a machine on the VPN / ExpressRoute
+# set admin_password and state_storage_account
 
 terraform init -backend-config=backend.hcl
 terraform apply
+```
+
+Phase 2 reads the Nexus URL from Phase 1's remote state. Run Phase 1 fully before Phase 2.
+
+### Option B — Managed private VNet
+
+```bash
+# In infra/terraform.tfvars:
+# set vnet_integrated = true, nsg_inbound_source = "<your-cidr>"
+# run terraform apply from a machine on the VPN / ExpressRoute
+
+cd infra && terraform apply
+# Phase 2 must also run from a machine that can reach the private IP:
+cd nexus && terraform apply
 ```
 
 ### Option C — Existing subnet
 
 ```bash
-cp terraform.tfvars.example terraform.tfvars
-# set admin_password
+# In infra/terraform.tfvars:
 # set existing_subnet_id = "/subscriptions/.../subnets/<name>"
-# (vnet_integrated and nsg_inbound_source are ignored)
-# run terraform apply from a machine that can reach the subnet's private IP
 
-terraform init -backend-config=backend.hcl
-terraform apply
+cd infra && terraform apply
+cd nexus && terraform apply
 ```
-
-**Total time: ~6–8 minutes** (Nexus initialises its database on first boot).
 
 ---
 
@@ -155,7 +183,7 @@ Before setting `existing_subnet_id`, ensure the target subnet has:
 
 2. **NSG rule** — inbound TCP 8081 from the sources that need to reach Nexus (pip clients, CI runners, etc.). This module does **not** create or modify NSGs on existing subnets.
 
-3. **Reachability** — `terraform apply` must run from a machine that can reach the private IP, so the bootstrap script can configure Nexus over HTTP.
+3. **Reachability** — `terraform apply` (Phase 2) must run from a machine that can reach the private IP.
 
 ---
 
@@ -178,22 +206,21 @@ Before setting `existing_subnet_id`, ensure the target subnet has:
 
 ### Option 1 — Global (all projects on this machine)
 
-```bash
-mkdir -p ~/.pip && cat > ~/.pip/pip.conf << 'EOF'
+```ini
+# ~/.pip/pip.conf  (macOS/Linux)
+# %APPDATA%\pip\pip.ini  (Windows)
 [global]
 index-url  = http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-group/simple/
 trusted-host = nexus-oss-3g1xti.uksouth.azurecontainer.io
-EOF
 ```
 
 ### Option 2 — Per virtualenv
 
-```bash
-cat > .venv/pip.conf << 'EOF'
+```ini
+# .venv/pip.conf
 [global]
 index-url  = http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-group/simple/
 trusted-host = nexus-oss-3g1xti.uksouth.azurecontainer.io
-EOF
 ```
 
 > **Why `trusted-host`?** The repo runs on plain HTTP. pip refuses unencrypted connections by default — `trusted-host` marks this host as safe. Remove it if you add TLS later.
@@ -240,12 +267,7 @@ options(repos = c(NEXUS = "http://nexus-oss-3g1xti.uksouth.azurecontainer.io:808
 
 ```bash
 # First install — Nexus fetches from PyPI and caches
-python -m venv .venv && .venv/bin/pip install pandas \
-  --index-url http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-group/simple/ \
-  --trusted-host nexus-oss-3g1xti.uksouth.azurecontainer.io
-
-# Second install — hits the Nexus cache, noticeably faster
-.venv/bin/pip install pandas \
+pip install pandas \
   --index-url http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-group/simple/ \
   --trusted-host nexus-oss-3g1xti.uksouth.azurecontainer.io
 ```
@@ -253,7 +275,7 @@ python -m venv .venv && .venv/bin/pip install pandas \
 ### Python — verify the allowlist blocks unlisted packages
 
 ```bash
-.venv/bin/pip install flask \
+pip install flask \
   --index-url http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-group/simple/ \
   --trusted-host nexus-oss-3g1xti.uksouth.azurecontainer.io
 # Expected: ERROR: Could not find a version that satisfies the requirement flask
@@ -263,11 +285,6 @@ python -m venv .venv && .venv/bin/pip install pandas \
 
 ```r
 options(repos = c(NEXUS = "http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/r-group/"))
-
-# First install — Nexus fetches from CRAN and caches
-install.packages("dplyr")
-
-# Second install — hits the Nexus cache
 install.packages("dplyr")
 ```
 
@@ -284,7 +301,6 @@ install.packages("shiny")
 1. Go to http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081
 2. Click **Browse** in the left sidebar.
 3. Open **pypi-group** or **r-group** to see available packages.
-4. Open the proxy repo (`pypi-pypi.org` or `r-cran.r-project.org`) to see what has been fetched and cached so far.
 
 ---
 
@@ -293,63 +309,43 @@ install.packages("shiny")
 Routing rules (`pypi-allowlist`, `r-cran-allowlist`) control which packages each proxy will fetch.
 Packages uploaded to the hosted repos (`pypi-hosted`, `r-hosted`) are always available regardless of the allowlist.
 
-### Python allowlist (`bootstrap.tf` → `pypi-allowlist`)
+### Python allowlist (`nexus/variables.tf` → `pypi_allowlist`)
 
 | Category | Packages |
 |----------|---------|
-| **Toolchain** | pip, setuptools, wheel, twine, build, poetry, pytest |
-| **Core data** | numpy, pandas, scipy, polars, pyarrow |
-| **Distributed** | dask, pyspark |
-| **Visualisation** | matplotlib, seaborn, plotly, bokeh, altair, kaleido, missingno |
-| **ML / Stats** | scikit-learn, xgboost, lightgbm, statsmodels, lifelines, pingouin |
-| **MLOps** | mlflow |
-| **Explainability** | shap, lime, eli5 |
-| **Data quality** | pandera, great-expectations |
-| **I/O & storage** | openpyxl, xlrd, xlsxwriter, fastparquet, sqlalchemy, psycopg2-binary, pymysql, pyodbc |
-| **Jupyter** | jupyter, jupyterlab, ipython, ipykernel, notebook, nbformat, nbconvert, ipywidgets, widgetsnbextension |
-| **Runtime utilities** | joblib, numba, tqdm, requests, httpx, aiohttp, python-dateutil, pytz, tzdata, six, certifi, charset-normalizer, idna, urllib3, packaging, click, pydantic, pydantic-core, typing-extensions, attrs, annotated-types |
+| **build_tools** | pip, setuptools, wheel, twine, build, poetry, pytest |
+| **core** | numpy, pandas, scipy, polars, pyarrow, dask, pyspark |
+| **visualisation** | matplotlib, seaborn, plotly, bokeh, altair, kaleido, missingno |
+| **ml** | scikit-learn, xgboost, lightgbm, statsmodels, lifelines, pingouin, mlflow, shap, lime, eli5, pandera, great-expectations |
+| **data_io** | openpyxl, xlrd, xlsxwriter, fastparquet, sqlalchemy, psycopg2-binary, pymysql, pyodbc |
+| **jupyter** | jupyter, jupyterlab, ipython, ipykernel, notebook, nbformat, nbconvert, ipywidgets, widgetsnbextension |
+| **utilities** | joblib, numba, tqdm, requests, httpx, aiohttp, python-dateutil, pytz, tzdata, six, certifi, charset-normalizer, idna, urllib3, packaging, click, pydantic, pydantic-core, typing-extensions, attrs, annotated-types |
 
-### R allowlist (`bootstrap.tf` → `r-cran-allowlist`)
+### R allowlist (`nexus/variables.tf` → `r_allowlist`)
 
 | Category | Packages |
 |----------|---------|
-| **Toolchain** | rlang, vctrs, lifecycle, cli, glue, magrittr, generics, R6, Rcpp, withr, pkgconfig, ellipsis |
-| **Tidyverse plumbing** | tibble, purrr, readr, forcats, hms, vroom, tidyselect, pillar, fansi, utf8, crayon, bit64, bit |
-| **Data wrangling** | tidyverse, dplyr, tidyr, stringr, stringi, data.table, lubridate, broom, modelr |
-| **I/O & formats** | haven, readxl, openxlsx, rio, foreign, cellranger, zip, jsonlite, curl, httr |
-| **Visualisation** | ggplot2, scales, gtable, isoband, farver, labeling, munsell, RColorBrewer, viridisLite, colorspace, MASS |
-| **String matching** | fuzzyjoin, stringdist |
+| **tidyverse_plumbing** | rlang, vctrs, lifecycle, cli, glue, magrittr, generics, R6, Rcpp, withr, pkgconfig, ellipsis, tibble, purrr, readr, forcats, hms, vroom, tidyselect, pillar, fansi, utf8, crayon, bit64, bit |
+| **data_wrangling** | tidyverse, dplyr, tidyr, stringr, stringi, data.table, lubridate, broom, modelr |
+| **io_formats** | haven, readxl, openxlsx, rio, foreign, cellranger, zip, jsonlite, curl, httr |
+| **visualisation** | ggplot2, scales, gtable, isoband, farver, labeling, munsell, RColorBrewer, viridisLite, colorspace, MASS |
+| **string_matching** | fuzzyjoin, stringdist |
 
-> **Tidyverse note:** `tidyverse` is a meta-package that installs ~30 sub-packages. The tidyverse plumbing row covers the transitive dependencies most likely to be pulled. If an install fails with a 404 on an unlisted dependency, add it and re-apply (see below).
+> **Tidyverse note:** `tidyverse` is a meta-package that installs ~30 sub-packages. The tidyverse_plumbing row covers the transitive dependencies most likely to be pulled. If an install fails with a 404 on an unlisted dependency, add it and re-apply (see below).
 
 ### Adding a new Python package
 
-1. Open `bootstrap.tf`, find the `nexus_upsert_routing_rule "pypi-allowlist"` call.
-2. Add two matchers for the new package:
-
-   ```
-   "^/simple/your-package(/.*)?$",  "^/packages/your-package(/.*)?$",
-   ```
-
-3. Bump `allowlist_version` in the `triggers` block (e.g. `"6"` → `"7"`).
-4. Run `terraform apply` — the routing rule updates in-place, no infrastructure changes.
+1. Open `nexus/variables.tf`, find `var.pypi_allowlist`, add the package to the appropriate category list.
+2. Run `terraform apply` from `nexus/` — the routing rule updates in-place, no infrastructure changes.
 
 > **Name normalisation:** PyPI normalises names to lowercase with hyphens. Use `scikit-learn` not `scikit_learn`.
 
 ### Adding a new R package
 
-1. Open `bootstrap.tf`, find the `nexus_upsert_routing_rule "r-cran-allowlist"` call.
-2. Add three matchers for the new package (source tarball + Windows binary + macOS binary):
+1. Open `nexus/variables.tf`, find `var.r_allowlist`, add the package to the appropriate category list.
+2. Run `terraform apply` from `nexus/` — the routing rule updates in-place.
 
-   ```
-   "^/src/contrib/your-package_",
-   "^/bin/windows/contrib/[^/]+/your-package_",
-   "^/bin/macosx/[^/]+/contrib/[^/]+/your-package_"
-   ```
-
-   If the package name contains a `.` (e.g. `data.table`), escape it as `data\.table` in the regex.
-
-3. Bump `allowlist_version` in the `triggers` block and run `terraform apply`.
+   If the package name contains a `.` (e.g. `data.table`), add it as-is — dot escaping is handled automatically by the Terraform code.
 
 ---
 
@@ -383,14 +379,6 @@ twine upload \
 
 Use the **web UI**: log in → **Browse → r-hosted → Upload component**, then select the `.tar.gz` source package or binary.
 
-Or use the Nexus REST API:
-
-```bash
-curl -u admin:YOUR_PASSWORD \
-  -F "r.asset=@/path/to/package_1.0.0.tar.gz;type=application/octet-stream" \
-  http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/service/rest/v1/components?repository=r-hosted
-```
-
 ---
 
 ## Creating user accounts
@@ -408,6 +396,19 @@ curl -u admin:YOUR_PASSWORD \
 
 ---
 
+## Cleanup policies
+
+The `datadrivers/nexus` Terraform provider (v2.x) does not expose a `nexus_cleanup_policy` resource. Cleanup policies must be created once via the Nexus admin UI:
+
+1. **Administration → Cleanup Policies → Create Cleanup Policy**
+2. Create `pypi-proxy-cleanup`: format `PyPI`, last downloaded `> 90 days`
+3. Create `r-proxy-cleanup`: format `R`, last downloaded `> 90 days`
+4. Associate each policy with its proxy repo via **Browse → \<repo\> → Edit → Cleanup**.
+
+Without cleanup, the Azure Files share will grow as packages are proxied.
+
+---
+
 ## Supply-chain risk mitigations
 
 | Risk | Mitigation in place |
@@ -418,21 +419,6 @@ curl -u admin:YOUR_PASSWORD \
 | Known CVEs | Run `pip-audit -r requirements.txt` in CI (not enforced by Nexus OSS) |
 | PyPI / CRAN outage | Nexus caches every download — previously-fetched packages remain available |
 
-### Scanning Python dependencies for CVEs
-
-```bash
-pip install pip-audit
-pip-audit -r requirements.txt
-```
-
-### Hash-pinning Python requirements (strongest protection)
-
-```bash
-pip install pip-tools
-pip-compile --generate-hashes requirements.in   # produces requirements.txt with SHA-256 hashes
-pip install --require-hashes -r requirements.txt  # fails if any file is tampered with
-```
-
 ---
 
 ## Troubleshooting
@@ -440,16 +426,16 @@ pip install --require-hashes -r requirements.txt  # fails if any file is tampere
 ### pip / install.packages returns 404 for a package
 
 The package is not on the allowlist. Either:
-- Add it to the allowlist in `bootstrap.tf` and `terraform apply`, **or**
+- Add it to the relevant category in `nexus/variables.tf` and `terraform apply` from `nexus/`, **or**
 - Upload it directly to the hosted repo via the web UI or API.
 
 ### Python package on the allowlist still returns 404
 
-The routing rule requires two matchers per package (`/simple/` and `/packages/`). Check that both are present in `bootstrap.tf`.
+The routing rule requires two matchers per package (`/simple/` and `/packages/`). These are generated automatically from `var.pypi_allowlist` — verify the package name spelling (lowercase, hyphens).
 
 ### R package on the allowlist still fails to install
 
-The routing rule requires three matchers per package (source + Windows binary + macOS binary paths). Check all three are present. Also verify that dot characters in the package name are escaped as `\.` in the regex.
+Three matchers per package (source + Windows binary + macOS binary) are generated automatically. Verify the package name in `var.r_allowlist`. Dot escaping (e.g. `data.table`) is handled automatically.
 
 ### Container logs
 
@@ -460,14 +446,11 @@ az container logs \
   --container-name nexus
 ```
 
-### Bootstrap can't authenticate
+### Nexus admin password
 
-Because `NEXUS_SECURITY_RANDOMPASSWORD=false` is set, Nexus starts with the fixed default password `admin123`. The bootstrap immediately replaces that with `var.admin_password`.
+Because `NEXUS_SECURITY_RANDOMPASSWORD=false` is set, Nexus starts with the fixed default password `admin123`. Phase 2 (`nexus/`) sets the real password via the `admin_password` variable.
 
-If the bootstrap can't authenticate, the most likely cause is a partial previous run where the password was already changed to something other than `var.admin_password`. Fix:
-
-1. Confirm the password in `terraform.tfvars` is correct and run `terraform apply` again — the bootstrap is idempotent.
-2. If the state is unknown, exec into the container:
+If Phase 2 fails to authenticate, confirm `admin_password` in `nexus/terraform.tfvars` and re-run. If the state is unknown, exec into the container:
 
 ```bash
 az container exec \
@@ -477,25 +460,17 @@ az container exec \
   --exec-command "ls /nexus-data/admin.password 2>/dev/null && cat /nexus-data/admin.password || echo 'no password file — default admin123 is active'"
 ```
 
-   - File absent → Nexus is using `admin123`. Set `admin_password = "admin123"` in tfvars, apply to let bootstrap set your real password, then restore and apply again.
-   - File present → use the file contents as `admin_password` and apply.
-
-### Re-run bootstrap without replacing infrastructure
-
-Bump `allowlist_version` in the `bootstrap.tf` triggers block and run `terraform apply`.
-The bootstrap script is fully idempotent — safe to re-run at any time.
-
 ---
 
 ## Upgrading Nexus
 
 1. Check the [Nexus 3 release notes](https://help.sonatype.com/en/sonatype-nexus-repository-release-notes.html) for breaking changes.
-2. In [container.tf](container.tf), update the image tag:
+2. In [infra/container.tf](infra/container.tf), update the image tag:
    ```hcl
    image = "sonatype/nexus3:3.X.Y"
    ```
-3. Run `terraform apply` — ACI replaces the container, Nexus runs any DB migrations on first boot.
-4. The bootstrap only re-runs if `admin_password_sha256` or `allowlist_version` changed, so existing repos and roles are untouched.
+3. Run `terraform apply` from `infra/` — ACI replaces the container; Nexus runs DB migrations on first boot.
+4. Re-run `terraform apply` from `nexus/` if any provider-managed configuration needs to be reconfirmed.
 
 > The Azure Files share holds all persistent data and survives container replacement.
 
@@ -509,13 +484,16 @@ az storage share snapshot \
   --account-name <storage-account-name> \
   --name nexus-data
 
-# Destroy all resources
-terraform destroy
+# Destroy Phase 2 first (removes Nexus config from state)
+cd nexus && terraform destroy
+
+# Then destroy Phase 1 (removes Azure infrastructure)
+cd ../infra && terraform destroy
 ```
 
-> ⚠️ `terraform destroy` deletes the resource group and **all** contents, including the Azure Files share and every cached package. Take a snapshot (above) if you may need to recover.
+> ⚠️ `terraform destroy` in `infra/` deletes the resource group and **all** contents, including the Azure Files share and every cached package.
 
-The remote state backend (`rg-nexus-tf-state`) is managed separately and is **not** destroyed by `terraform destroy`. Delete it manually if no longer needed:
+The remote state backend (`rg-nexus-tf-state`) is managed separately and is **not** destroyed. Delete it manually if no longer needed:
 
 ```bash
 az group delete --name rg-nexus-tf-state
@@ -537,33 +515,38 @@ az group delete --name rg-nexus-tf-state
 
 ```
 .
-├── providers.tf               azurerm / null / random / time
-├── variables.tf               All inputs (including existing_subnet_id)
-├── locals.tf                  URLs, JVM sizing, use_vnet flag
-├── main.tf                    Resource Group + random suffix
-├── storage.tf                 Storage Account + nexus-data File Share
-├── network.tf                 VNet + ACI subnet + NSG (conditional on existing_subnet_id)
-├── container.tf               ACI Container Group (single Nexus container)
-├── bootstrap.tf               Waits for startup, configures Nexus via REST API
-│                                Python stack:
-│                                  pypi-allowlist routing rule
-│                                  pypi-hosted / pypi-pypi.org proxy / pypi-group
-│                                  pypi-proxy-cleanup policy (90-day)
-│                                  pypi-anonymous-reader / pypi-authenticated-deployer roles
-│                                R stack:
-│                                  r-cran-allowlist routing rule
-│                                  r-hosted / r-cran.r-project.org proxy / r-group
-│                                  r-proxy-cleanup policy (90-day)
-│                                  r-anonymous-reader / r-authenticated-deployer roles
-│                                  anonymous user locked to both reader roles
-├── outputs.tf                 pip URLs, twine command, pip.conf snippets, NSG rule output
-├── terraform.tfvars.example
-├── backend.hcl.example        Template for backend.hcl (git-ignored)
+├── infra/                         Phase 1 — Azure infrastructure
+│   ├── providers.tf               azurerm / null / random / time
+│   ├── variables.tf               All inputs (location, sizing, networking, etc.)
+│   ├── locals.tf                  URLs, JVM sizing, use_vnet flag
+│   ├── main.tf                    Resource Group + random suffix
+│   ├── storage.tf                 Storage Account + nexus-data File Share
+│   ├── network.tf                 VNet + ACI subnet + NSG (conditional)
+│   ├── container.tf               ACI Container Group + time_sleep.nexus_ready (2 min)
+│   ├── outputs.tf                 nexus_base_url (gated on time_sleep), pip URLs, snippets
+│   ├── terraform.tfvars.example
+│   ├── backend.hcl.example        key = infra.tfstate
+│   └── .terraform.lock.hcl
+│
+├── nexus/                         Phase 2 — Nexus configuration (datadrivers/nexus provider)
+│   ├── providers.tf               datadrivers/nexus >= 2.0.0; URL from infra remote state
+│   ├── variables.tf               admin_password, state_storage_account,
+│   │                                pypi_allowlist (7 categories), r_allowlist (5 categories)
+│   ├── main.tf                    nexus_security_anonymous
+│   │                                pypi-allowlist routing rule (loop-generated matchers)
+│   │                                pypi-hosted / pypi-pypi.org proxy / pypi-group
+│   │                                r-cran-allowlist routing rule (loop-generated matchers)
+│   │                                r-hosted / r-cran.r-project.org proxy / r-group
+│   │                                4 roles + anonymous user locked to reader roles
+│   ├── terraform.tfvars.example
+│   ├── backend.hcl.example        key = nexus.tfstate
+│   └── .terraform.lock.hcl
+│
 ├── scripts/
-│   ├── create-backend.sh      Bash: provision remote state storage + write backend.hcl
-│   └── create-backend.ps1     PowerShell: same as above for Windows
+│   ├── create-backend.sh          Bash: provision remote state storage + write backend.hcl
+│   └── create-backend.ps1         PowerShell: same as above for Windows
 └── .github/
     └── workflows/
-        └── ci.yml             CI: calls reusable terraform-ci.yml from TobyAnscombe/github-actions
-                                   (terraform fmt/validate, TFLint, Trivy security scan)
+        └── ci.yml                 infra (CI) → infra-apply → nexus-config (CI) → nexus-config-apply
+                                     (apply jobs run on main branch pushes only)
 ```

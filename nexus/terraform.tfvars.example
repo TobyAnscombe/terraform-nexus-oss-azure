@@ -1,0 +1,27 @@
+# Copy to nexus/terraform.tfvars and fill in your values.
+# NEVER commit terraform.tfvars — it is git-ignored.
+
+# ── Required ──────────────────────────────────────────────────────────────────
+admin_password        = "Ch@ngeMe123!"       # must match the password set in infra/
+state_storage_account = "sttfstate<suffix>"  # same storage account as infra/backend.hcl
+
+# ── Package allowlists (optional — defaults cover the full list) ───────────────
+# Override only the categories you want to change.  Shown with a few examples:
+
+# pypi_allowlist = {
+#   build_tools   = ["pip", "setuptools", "wheel", "twine", "build"]
+#   core          = ["numpy", "pandas", "scipy"]
+#   visualisation = ["matplotlib", "seaborn", "plotly"]
+#   ml            = ["scikit-learn", "xgboost"]
+#   data_io       = ["openpyxl", "sqlalchemy"]
+#   jupyter       = ["jupyter", "jupyterlab", "ipython"]
+#   utilities     = ["requests", "pydantic", "click"]
+# }
+
+# r_allowlist = {
+#   tidyverse_plumbing = ["rlang", "vctrs", "tibble", "purrr"]
+#   data_wrangling     = ["dplyr", "tidyr", "data.table"]
+#   io_formats         = ["haven", "readxl", "jsonlite"]
+#   visualisation      = ["ggplot2", "scales"]
+#   string_matching    = ["fuzzyjoin", "stringdist"]
+# }

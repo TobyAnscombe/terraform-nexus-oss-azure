@@ -1,0 +1,10 @@
+# Copy to nexus/backend.hcl — NEVER commit backend.hcl (git-ignored).
+#
+# Use the same storage account as infra/ — only the key changes.
+#
+#   terraform init -backend-config=backend.hcl
+
+resource_group_name  = "rg-nexus-tf-state"
+storage_account_name = "sttfstate<suffix>"   # replace — same value as infra/backend.hcl
+container_name       = "tfstate"
+key                  = "nexus.tfstate"

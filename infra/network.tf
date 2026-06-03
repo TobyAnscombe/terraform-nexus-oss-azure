@@ -21,8 +21,7 @@
 #   - The public IP and DNS label are removed.
 #   - NSG rules apply.  Update nsg_inbound_source in terraform.tfvars to
 #     restrict access to your VPN / ExpressRoute / peered VNet CIDR.
-#   - Bootstrap (and all pip traffic) must come from a host that can reach
-#     the private IP — run terraform apply from a machine on the VPN.
+#   - All pip traffic must come from a host that can reach the private IP.
 #
 # Going private with the managed VNet — step-by-step:
 #   1. Connect your corporate network (VPN Gateway or ExpressRoute) to this VNet.

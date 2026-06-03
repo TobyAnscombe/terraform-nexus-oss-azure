@@ -3,7 +3,7 @@
 # One-time setup: provision the Azure Storage resources that hold Terraform
 # remote state and write backend.hcl ready for use with:
 #
-#   terraform init -backend-config=backend.hcl
+#   terraform init --backend-config=backend.hcl
 #
 # Usage:
 #   ./scripts/create-backend.sh [resource-group] [location]
@@ -14,7 +14,7 @@
 #
 # Safe to re-run — if backend.hcl already exists the script exits early.
 # ---------------------------------------------------------------------------
-set -euo pipefail
+#set -euo pipefail
 
 RG="${1:-rg-nexus-tf-state}"
 LOCATION="${2:-uksouth}"
@@ -32,7 +32,7 @@ if [ -f "$BACKEND_HCL" ]; then
   SA=$(grep storage_account_name "$BACKEND_HCL" | sed 's/.*= *//' | tr -d '"' | tr -d ' ')
   echo "backend.hcl already exists (storage account: $SA)."
   echo "Delete backend.hcl to force recreation, or keep this one and run:"
-  echo "  terraform init -backend-config=backend.hcl"
+  echo "  terraform init --backend-config=backend.hcl"
   exit 0
 fi
 
@@ -103,5 +103,5 @@ echo " Resource group  : $RG"
 echo " Subscription    : $SUBSCRIPTION"
 echo ""
 echo " Next step:"
-echo "   terraform init -backend-config=backend.hcl"
+echo "   terraform init --backend-config=backend.hcl"
 echo "============================================================"

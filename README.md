@@ -118,7 +118,7 @@ cd infra
 cp terraform.tfvars.example terraform.tfvars
 # edit terraform.tfvars as needed
 
-terraform init -backend-config=backend.hcl
+terraform init --backend-config=backend.hcl
 terraform apply
 ```
 
@@ -131,11 +131,17 @@ cd nexus
 cp terraform.tfvars.example terraform.tfvars
 # set admin_password and state_storage_account
 
-terraform init -backend-config=backend.hcl
+terraform init --backend-config=backend.hcl
+```
+
+Nexus ships with a built-in `anonymous` user that must be imported into state before the first apply, otherwise Terraform will try to create it and fail with a duplicate-user error:
+
+```bash
+terraform import nexus_security_user.anonymous anonymous
 terraform apply
 ```
 
-Phase 2 reads the Nexus URL from Phase 1's remote state. Run Phase 1 fully before Phase 2.
+Phase 2 reads the Nexus URL from Phase 1's remote state and changes the admin password from the Nexus default (`admin123`) to the value set in `admin_password`. Run Phase 1 fully before Phase 2.
 
 ### Option B — Managed private VNet
 

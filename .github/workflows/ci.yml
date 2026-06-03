@@ -11,7 +11,7 @@ jobs:
     uses: TobyAnscombe/github-actions/.github/workflows/terraform-ci.yml@main
     with:
       terraform_version: "~> 1.5"
-      tflint_version: "v0.55.0"
+      tflint_version: "v0.63.0"
       working_directory: "infra"
       trivy_severity: "HIGH,CRITICAL"
 
@@ -19,6 +19,6 @@ jobs:
     uses: TobyAnscombe/github-actions/.github/workflows/terraform-ci.yml@main
     with:
       terraform_version: "~> 1.5"
-      tflint_version: "v0.55.0"
+      tflint_version: "v0.63.0"
       working_directory: "nexus"
       trivy_severity: "HIGH,CRITICAL"

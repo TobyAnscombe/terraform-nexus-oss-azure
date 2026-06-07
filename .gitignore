@@ -25,3 +25,4 @@ backend.hcl
 
 CLAUDE.md
 tasks/
+.claude/

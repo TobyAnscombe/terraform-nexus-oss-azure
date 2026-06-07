@@ -14,7 +14,7 @@
 #
 # Safe to re-run — if backend.hcl already exists the script exits early.
 # ---------------------------------------------------------------------------
-#set -euo pipefail
+set -euo pipefail
 
 RG="${1:-rg-nexus-tf-state}"
 LOCATION="${2:-uksouth}"

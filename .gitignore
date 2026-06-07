@@ -22,3 +22,6 @@ backend.hcl
 *.swo
 .idea/
 .vscode/
+
+CLAUDE.md
+tasks/

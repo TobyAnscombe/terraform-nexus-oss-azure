@@ -22,3 +22,6 @@ jobs:
       tflint_version: "v0.63.0"
       working_directory: "nexus"
       trivy_severity: "HIGH,CRITICAL"
+
+  claude-file-check:
+    uses: TobyAnscombe/github-actions/.github/workflows/claude-file-check.yml@main

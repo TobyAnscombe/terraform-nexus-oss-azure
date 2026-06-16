@@ -54,14 +54,33 @@ available even if PyPI or CRAN is unreachable.
 - Hosted repos are checked first, so internal packages shadow same-named public packages (prevents dependency-confusion attacks).
 - Routing rules enforce the allowlist — only pre-approved packages are ever fetched from the internet.
 
+### Container architecture
+
+The ACI container group runs two containers that share `localhost`:
+
+```
+Client (pip / R / browser)
+        │  port 80
+        ▼
+  nginx:1.27-alpine      ← only externally exposed port
+        │  proxy_pass localhost:8081
+        ▼
+  sonatype/nexus3        ← internal only (non-root, cannot bind <1024)
+        │
+        └── /nexus-data  (Azure Files share — persists across restarts)
+```
+
+Nexus runs as a non-root user and cannot bind to privileged ports. nginx proxies port 80 to Nexus on 8081, keeping Nexus off the public internet directly.
+
 ---
 
 ## Prerequisites
 
-| Tool | Notes |
-|------|-------|
-| Terraform ≥ 1.5 | `brew install terraform` |
-| Azure CLI | `brew install azure-cli` |
+| Tool | macOS / Linux | Windows |
+|------|--------------|---------|
+| Terraform ≥ 1.5 | `brew install terraform` | [terraform.io/downloads](https://developer.hashicorp.com/terraform/install) |
+| Azure CLI | `brew install azure-cli` | `winget install Microsoft.AzureCLI` |
+| PowerShell | built-in | built-in (Windows 11) |
 
 ---
 
@@ -120,6 +139,7 @@ sed 's/nexus-oss.terraform.tfstate/nexus.tfstate/'  backend.hcl > nexus/backend.
 
 ### Phase 1 — Infrastructure
 
+**macOS / Linux**
 ```bash
 cd infra
 cp terraform.tfvars.example terraform.tfvars
@@ -129,10 +149,21 @@ terraform init --backend-config=backend.hcl
 terraform apply
 ```
 
+**Windows (PowerShell)**
+```powershell
+cd infra
+Copy-Item terraform.tfvars.example terraform.tfvars
+# edit terraform.tfvars as needed
+
+terraform init -backend-config=backend.hcl
+terraform apply
+```
+
 **Total time: ~5–7 minutes** (includes a 2-minute startup wait for Nexus).
 
 ### Phase 2 — Nexus configuration
 
+**macOS / Linux**
 ```bash
 cd nexus
 cp terraform.tfvars.example terraform.tfvars
@@ -141,9 +172,18 @@ cp terraform.tfvars.example terraform.tfvars
 terraform init --backend-config=backend.hcl
 ```
 
+**Windows (PowerShell)**
+```powershell
+cd nexus
+Copy-Item terraform.tfvars.example terraform.tfvars
+# set admin_password and state_storage_account
+
+terraform init -backend-config=backend.hcl
+```
+
 Nexus ships with a built-in `anonymous` user that must be imported into state before the first apply, otherwise Terraform will try to create it and fail with a duplicate-user error:
 
-```bash
+```
 terraform import nexus_security_user.anonymous anonymous
 terraform apply
 ```

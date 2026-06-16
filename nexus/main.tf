@@ -37,11 +37,24 @@ resource "null_resource" "set_admin_password" {
     nexus_url     = local.nexus_url
   }
 
-  # No interpreter override — Terraform uses cmd.exe on Windows, sh on Linux/macOS.
-  # Values are inlined by Terraform so no shell env var syntax ($VAR / %VAR%) is needed.
-  # || is supported by both cmd.exe and sh: run second curl only if admin123 auth fails.
+  # PowerShell interpreter works on Windows 11 without bash.
+  # Password is passed via environment (not inlined in the command string) to keep it
+  # out of process argv and Terraform debug logs, and to avoid shell metachar injection.
+  # curl.exe ships with Windows 11; $env: references are safe regardless of password content.
   provisioner "local-exec" {
-    command = "curl -sf -u admin:admin123 -X PUT \"${local.nexus_url}/service/rest/v1/security/users/admin/change-password\" -H \"Content-Type: text/plain\" -d \"${var.admin_password}\" || curl -sf -u \"admin:${var.admin_password}\" -X PUT \"${local.nexus_url}/service/rest/v1/security/users/admin/change-password\" -H \"Content-Type: text/plain\" -d \"${var.admin_password}\""
+    interpreter = ["PowerShell", "-Command"]
+    environment = {
+      NEXUS_URL    = local.nexus_url
+      NEW_PASSWORD = var.admin_password
+    }
+    command = <<-EOT
+      $url = $env:NEXUS_URL + '/service/rest/v1/security/users/admin/change-password'
+      curl.exe -sf -u admin:admin123 -X PUT $url -H 'Content-Type: text/plain' -d $env:NEW_PASSWORD
+      if ($LASTEXITCODE -ne 0) {
+        $cred = 'admin:' + $env:NEW_PASSWORD
+        curl.exe -sf -u $cred -X PUT $url -H 'Content-Type: text/plain' -d $env:NEW_PASSWORD
+      }
+    EOT
   }
 }
 

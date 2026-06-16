@@ -3,7 +3,7 @@
 #
 # Two containers share localhost in the same ACI group:
 #   nexus — sonatype/nexus3, listens on 8081 (internal only, not exposed)
-#   nginx — nginx:alpine, listens on 80, proxies all traffic to localhost:8081
+#   nginx — nginx:1.27-alpine, listens on 80, proxies all traffic to localhost:8081
 #
 # Port 80 is the only externally exposed port. nginx writes its config inline
 # via the commands override so no external config file or custom image is needed.
@@ -55,10 +55,13 @@ resource "azurerm_container_group" "nexus" {
       share_name           = azurerm_storage_share.nexus_data.name
     }
 
+    # Probe via nginx (port 80) rather than directly to Nexus (8081) so that:
+    # - no port 8081 declaration is needed on this container (avoids external exposure)
+    # - probe tests the full proxy chain; a failed nginx config also triggers a restart
     liveness_probe {
       http_get {
         path   = "/service/rest/v1/status"
-        port   = 8081
+        port   = 80
         scheme = "Http"
       }
       initial_delay_seconds = 90
@@ -77,19 +80,35 @@ resource "azurerm_container_group" "nexus" {
   # ---------------------------------------------------------------------------
   container {
     name   = "nginx"
-    image  = "nginx:alpine"
+    image  = "nginx:1.27-alpine"
     cpu    = 0.1
-    memory = 0.1
+    memory = 0.5
 
     ports {
       port     = 80
       protocol = "TCP"
     }
 
+    # proxy_buffering off        — don't buffer responses (downloads) in nginx memory
+    # proxy_request_buffering off — don't buffer request bodies (uploads) before forwarding;
+    #                               prevents OOM on large package uploads (wheels, R tarballs)
     commands = [
       "/bin/sh", "-c",
-      "echo 'server{listen 80;client_max_body_size 0;location /{proxy_pass http://localhost:8081;proxy_set_header Host $host;proxy_set_header X-Real-IP $remote_addr;proxy_read_timeout 300;proxy_send_timeout 300;proxy_buffering off;}}' > /etc/nginx/conf.d/default.conf && exec nginx -g 'daemon off;'",
+      "echo 'server{listen 80;client_max_body_size 0;location /{proxy_pass http://localhost:8081;proxy_set_header Host $host;proxy_set_header X-Real-IP $remote_addr;proxy_read_timeout 300;proxy_send_timeout 300;proxy_buffering off;proxy_request_buffering off;}}' > /etc/nginx/conf.d/default.conf && exec nginx -g 'daemon off;'",
     ]
+
+    liveness_probe {
+      http_get {
+        path   = "/service/rest/v1/status"
+        port   = 80
+        scheme = "Http"
+      }
+      initial_delay_seconds = 10
+      period_seconds        = 30
+      failure_threshold     = 5
+      success_threshold     = 1
+      timeout_seconds       = 10
+    }
   }
 
   tags = local.common_tags

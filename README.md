@@ -599,8 +599,12 @@ az storage share snapshot \
   --account-name <storage-account-name> \
   --name nexus-data
 
-# Destroy Phase 2 first (removes Nexus config from state)
-cd nexus && terraform destroy
+# Remove the anonymous user from state before destroying — Nexus hard-blocks
+# deletion of this built-in account and terraform destroy will fail without this.
+cd nexus && terraform state rm nexus_security_user.anonymous
+
+# Destroy Phase 2 (removes Nexus config from state)
+terraform destroy
 
 # Then destroy Phase 1 (removes Azure infrastructure)
 cd ../infra && terraform destroy

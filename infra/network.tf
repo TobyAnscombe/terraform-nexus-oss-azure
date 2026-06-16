@@ -74,7 +74,7 @@ resource "azurerm_subnet" "aci" {
 # To lock down: set nsg_inbound_source to your corporate CIDR in tfvars.
 # ---------------------------------------------------------------------------
 resource "azurerm_network_security_group" "aci" {
-  count = var.existing_subnet_id == null ? 1 : 0
+  count = (var.existing_subnet_id == null && var.vnet_integrated) ? 1 : 0
 
   name                = "nsg-${var.environment}-aci-nexus"
   location            = azurerm_resource_group.main.location
@@ -98,7 +98,7 @@ resource "azurerm_network_security_group" "aci" {
 }
 
 resource "azurerm_subnet_network_security_group_association" "aci" {
-  count = var.existing_subnet_id == null ? 1 : 0
+  count = (var.existing_subnet_id == null && var.vnet_integrated) ? 1 : 0
 
   subnet_id                 = azurerm_subnet.aci[0].id
   network_security_group_id = azurerm_network_security_group.aci[0].id

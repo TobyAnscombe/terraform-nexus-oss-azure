@@ -38,6 +38,7 @@ resource "null_resource" "set_admin_password" {
   }
 
   provisioner "local-exec" {
+    interpreter = ["bash", "-c"]
     environment = {
       NEXUS_URL    = local.nexus_url
       NEW_PASSWORD = var.admin_password
@@ -82,7 +83,7 @@ resource "nexus_routing_rule" "pypi_allowlist" {
   matchers = toset(flatten([
     for pkg in local.all_pypi_packages : [
       "^/simple/${pkg}(/.*)?$",
-      "^/packages/${pkg}(/.*)?$",
+      "^/packages(.*/)?${replace(pkg, ".", "\\.")}[-_]",
     ]
   ]))
 
@@ -163,10 +164,10 @@ resource "nexus_routing_rule" "r_cran_allowlist" {
   mode        = "ALLOW"
   matchers = toset(concat(
     [
-      "^/src/contrib/PACKAGES",
+      "^/src/contrib/PACKAGES($|\\.)",
       "^/src/contrib/Meta/",
-      "^/bin/windows/contrib/[^/]+/PACKAGES",
-      "^/bin/macosx/[^/]+/contrib/[^/]+/PACKAGES",
+      "^/bin/windows/contrib/[^/]+/PACKAGES($|\\.)",
+      "^/bin/macosx/[^/]+/contrib/[^/]+/PACKAGES($|\\.)",
     ],
     flatten([
       for pkg in local.all_r_packages : [

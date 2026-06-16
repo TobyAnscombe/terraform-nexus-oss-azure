@@ -143,6 +143,22 @@ variable "aci_subnet_prefix" {
   default     = "10.100.1.0/24"
 }
 
+variable "restrict_storage_to_vnet" {
+  description = <<-EOF
+    Enable the storage account network firewall when using an existing subnet
+    (existing_subnet_id is set). When true, only traffic from the subnet is
+    allowed to reach the Azure Files share.
+
+    Requires: Microsoft.Storage service endpoint must already be configured on
+    the existing subnet before running terraform apply.
+
+    Ignored when existing_subnet_id is null — the firewall is controlled by
+    vnet_integrated in that case.
+  EOF
+  type        = bool
+  default     = false
+}
+
 variable "nsg_inbound_source" {
   description = <<-EOF
     Source address prefix for the NSG inbound rule on port 8081.

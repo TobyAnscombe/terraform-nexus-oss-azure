@@ -17,6 +17,27 @@ locals {
 
   # Flatten all R packages; dots are escaped for regex matching.
   all_r_packages = flatten(values(var.r_allowlist))
+
+  # Platform detection: Windows absolute paths start with a drive letter + backslash.
+  is_windows = length(regexall("^[A-Za-z]:\\\\", abspath(path.module))) > 0
+
+  # Password bootstrap commands — logically identical, syntactically different per platform.
+  # Both try admin123 first (new/reset instance); fall back to var.admin_password (re-apply).
+  # Note: Terraform only interpolates ${...} in strings; bare $word is passed through as-is.
+  _pw_ps = <<-PS
+    $url = $env:NEXUS_URL + '/service/rest/v1/security/users/admin/change-password'
+    curl.exe -sf -u admin:admin123 -X PUT $url -H 'Content-Type: text/plain' -d $env:NEW_PASSWORD
+    if ($LASTEXITCODE -ne 0) {
+      $cred = 'admin:' + $env:NEW_PASSWORD
+      curl.exe -sf -u $cred -X PUT $url -H 'Content-Type: text/plain' -d $env:NEW_PASSWORD
+    }
+  PS
+
+  _pw_sh = <<-SH
+    url="$NEXUS_URL/service/rest/v1/security/users/admin/change-password"
+    curl -sf -u "admin:admin123" -X PUT "$url" -H 'Content-Type: text/plain' -d "$NEW_PASSWORD" ||
+    curl -sf -u "admin:$NEW_PASSWORD" -X PUT "$url" -H 'Content-Type: text/plain' -d "$NEW_PASSWORD"
+  SH
 }
 
 ###############################################################################
@@ -37,24 +58,15 @@ resource "null_resource" "set_admin_password" {
     nexus_url     = local.nexus_url
   }
 
-  # PowerShell interpreter works on Windows 11 without bash.
-  # Password is passed via environment (not inlined in the command string) to keep it
-  # out of process argv and Terraform debug logs, and to avoid shell metachar injection.
-  # curl.exe ships with Windows 11; $env: references are safe regardless of password content.
+  # Platform-adaptive: PowerShell on Windows, bash on macOS/Linux.
+  # Password is passed via environment to keep it out of process argv and Terraform debug logs.
   provisioner "local-exec" {
-    interpreter = ["PowerShell", "-Command"]
+    interpreter = local.is_windows ? ["PowerShell", "-Command"] : ["bash", "-c"]
     environment = {
       NEXUS_URL    = local.nexus_url
       NEW_PASSWORD = var.admin_password
     }
-    command = <<-EOT
-      $url = $env:NEXUS_URL + '/service/rest/v1/security/users/admin/change-password'
-      curl.exe -sf -u admin:admin123 -X PUT $url -H 'Content-Type: text/plain' -d $env:NEW_PASSWORD
-      if ($LASTEXITCODE -ne 0) {
-        $cred = 'admin:' + $env:NEW_PASSWORD
-        curl.exe -sf -u $cred -X PUT $url -H 'Content-Type: text/plain' -d $env:NEW_PASSWORD
-      }
-    EOT
+    command = local.is_windows ? local._pw_ps : local._pw_sh
   }
 }
 

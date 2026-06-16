@@ -88,6 +88,44 @@ CheckHttp 'Blocked package denied (flask)'      "$NexusUrl/repository/pypi-group
 CheckHttp 'CRAN PACKAGES index readable'        "$NexusUrl/repository/r-group/src/contrib/PACKAGES"
 CheckHttp 'Anonymous write rejected (pypi-hosted)' "$NexusUrl/repository/pypi-hosted/" -Expect @(401) -CurlArgs @('-X', 'POST')
 
+# ── pip client tests ─────────────────────────────────────────────────────────
+Write-Host ""
+Write-Host "pip client"
+
+$trustedHost = ($NexusUrl -replace '^https?://', '')
+
+function CheckPip {
+    param([string]$Label, [string]$Package, [bool]$ExpectPass)
+    if (-not (Get-Command pip -ErrorAction SilentlyContinue)) {
+        Write-Host "  [SKIP] $Label  (pip not found)" -ForegroundColor DarkGray
+        return
+    }
+    $out = pip install $Package `
+        --index-url "$NexusUrl/repository/pypi-group/simple/" `
+        --trusted-host $trustedHost `
+        --dry-run --quiet 2>&1 | Out-String
+    if ($ExpectPass) {
+        if ($out -match 'would install|already satisfied|Requirement already') {
+            Write-Host ("  [PASS] " + $Label) -ForegroundColor Green
+            $script:pass++
+        } else {
+            Write-Host ("  [FAIL] " + $Label + "  (expected pip to resolve package)") -ForegroundColor Red
+            $script:fail++
+        }
+    } else {
+        if ($out -match 'Could not find|No matching|not find a version') {
+            Write-Host ("  [PASS] " + $Label + "  (correctly blocked)") -ForegroundColor Green
+            $script:pass++
+        } else {
+            Write-Host ("  [FAIL] " + $Label + "  (expected block, pip did not report error)") -ForegroundColor Red
+            $script:fail++
+        }
+    }
+}
+
+CheckPip 'pip install pandas (allowlisted)'  'pandas' $true
+CheckPip 'pip install flask  (blocked)'      'flask'  $false
+
 # ── Admin password checks ─────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "Admin credentials"

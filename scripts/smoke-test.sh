@@ -45,13 +45,13 @@ check() {
 
   if $ok; then
     printf "  ${GREEN}[PASS]${RESET} %s\n" "$label"
-    ((pass++))
+    pass=$((pass+1))
   else
     local want
     want=$(IFS='/'; echo "${expect[*]}")
     printf "  ${RED}[FAIL]${RESET} %s  (HTTP %s, expected %s)\n" "$label" "$code" "$want"
     printf "         ${GRAY}%s${RESET}\n" "$url"
-    ((fail++))
+    fail=$((fail+1))
   fi
 }
 

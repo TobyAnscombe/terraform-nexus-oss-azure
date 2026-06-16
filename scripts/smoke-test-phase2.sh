@@ -57,7 +57,7 @@ check_http() {
 
   if $ok; then
     printf "  ${GREEN}[PASS]${RESET} %s\n" "$label"
-    ((pass++))
+    pass=$((pass+1))
   else
     local want; want=$(IFS='/'; echo "${expect[*]}")
     printf "  ${RED}[FAIL]${RESET} %s  (HTTP %s, expected %s)\n" "$label" "$code" "$want"
@@ -73,7 +73,7 @@ check_body() {
   body=$(curl -sf "$@" "$url" 2>/dev/null || true)
   if echo "$body" | grep -q "$contains"; then
     printf "  ${GREEN}[PASS]${RESET} %s\n" "$label"
-    ((pass++))
+    pass=$((pass+1))
   else
     printf "  ${RED}[FAIL]${RESET} %s  (expected '%s' in response)\n" "$label" "$contains"
     ((fail++))
@@ -94,6 +94,43 @@ check_http 'Allowlisted package accessible (numpy)' "$NEXUS_URL/repository/pypi-
 check_http 'Blocked package denied (flask)'         "$NEXUS_URL/repository/pypi-group/simple/flask/" 403 404
 check_http 'CRAN PACKAGES index readable'           "$NEXUS_URL/repository/r-group/src/contrib/PACKAGES"
 check_http 'Anonymous write rejected (pypi-hosted)' "$NEXUS_URL/repository/pypi-hosted/" 401 -- -X POST
+
+# ── pip client tests ─────────────────────────────────────────────────────────
+echo ""
+echo "pip client"
+
+check_pip() {
+  local label="$1" pkg="$2" expect_pass="$3"
+  if ! command -v pip &>/dev/null; then
+    printf "  [SKIP] %s  (pip not found)\n" "$label"
+    return
+  fi
+  local out
+  out=$(pip install "$pkg" \
+    --index-url "$NEXUS_URL/repository/pypi-group/simple/" \
+    --trusted-host "${NEXUS_URL#http://}" \
+    --dry-run --quiet 2>&1 || true)
+  if $expect_pass; then
+    if echo "$out" | grep -qi "would install\|already satisfied\|Requirement already"; then
+      printf "  ${GREEN}[PASS]${RESET} %s\n" "$label"
+      pass=$((pass+1))
+    else
+      printf "  ${RED}[FAIL]${RESET} %s  (expected pip to resolve package)\n" "$label"
+      fail=$((fail+1))
+    fi
+  else
+    if echo "$out" | grep -qi "could not find\|no matching\|not find a version"; then
+      printf "  ${GREEN}[PASS]${RESET} %s  (correctly blocked)\n" "$label"
+      pass=$((pass+1))
+    else
+      printf "  ${RED}[FAIL]${RESET} %s  (expected block, but pip did not report error)\n" "$label"
+      fail=$((fail+1))
+    fi
+  fi
+}
+
+check_pip 'pip install pandas (allowlisted)'  pandas true
+check_pip 'pip install flask  (blocked)'      flask  false
 
 # ── Admin password checks ─────────────────────────────────────────────────────
 echo ""

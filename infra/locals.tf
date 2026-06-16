@@ -34,7 +34,6 @@ locals {
     "-Xmx${local.nexus_heap_gb}g",
     "-XX:MaxDirectMemorySize=${local.nexus_direct_gb}g",
     "-Djava.util.prefs.userRoot=/nexus-data/javaprefs",
-    "-Dapplication-port=80",
   ])
 
   common_tags = merge(

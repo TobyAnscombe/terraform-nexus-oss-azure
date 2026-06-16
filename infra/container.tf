@@ -1,8 +1,14 @@
 ###############################################################################
-# Azure Container Group — single Nexus OSS container
+# Azure Container Group — Nexus OSS + nginx reverse proxy sidecar
+#
+# Two containers share localhost in the same ACI group:
+#   nexus — sonatype/nexus3, listens on 8081 (internal only, not exposed)
+#   nginx — nginx:alpine, listens on 80, proxies all traffic to localhost:8081
+#
+# Port 80 is the only externally exposed port. nginx writes its config inline
+# via the commands override so no external config file or custom image is needed.
 #
 # ip_address_type and subnet_ids are conditional on var.vnet_integrated:
-#
 #   false (default) → Public IP + DNS label, no VNet attachment
 #   true            → Private IP in snet-aci, no public DNS
 #
@@ -21,16 +27,14 @@ resource "azurerm_container_group" "nexus" {
 
   restart_policy = "Always"
 
+  # ---------------------------------------------------------------------------
+  # Nexus OSS — internal on port 8081, not exposed externally
+  # ---------------------------------------------------------------------------
   container {
     name   = "nexus"
     image  = "sonatype/nexus3:3.92.2"
     cpu    = var.nexus_cpu
     memory = var.nexus_memory_gb
-
-    ports {
-      port     = 80
-      protocol = "TCP"
-    }
 
     environment_variables = {
       # Use a fixed initial password ('admin123') rather than a random one
@@ -54,7 +58,7 @@ resource "azurerm_container_group" "nexus" {
     liveness_probe {
       http_get {
         path   = "/service/rest/v1/status"
-        port   = 80
+        port   = 8081
         scheme = "Http"
       }
       initial_delay_seconds = 90
@@ -63,6 +67,29 @@ resource "azurerm_container_group" "nexus" {
       success_threshold     = 1
       timeout_seconds       = 10
     }
+  }
+
+  # ---------------------------------------------------------------------------
+  # nginx sidecar — proxies port 80 → localhost:8081
+  # Config is written inline; containers share localhost so no network config needed.
+  # client_max_body_size 0 allows arbitrarily large package uploads.
+  # proxy_buffering off avoids buffering large package downloads in nginx memory.
+  # ---------------------------------------------------------------------------
+  container {
+    name   = "nginx"
+    image  = "nginx:alpine"
+    cpu    = 0.1
+    memory = 0.1
+
+    ports {
+      port     = 80
+      protocol = "TCP"
+    }
+
+    commands = [
+      "/bin/sh", "-c",
+      "echo 'server{listen 80;client_max_body_size 0;location /{proxy_pass http://localhost:8081;proxy_set_header Host $host;proxy_set_header X-Real-IP $remote_addr;proxy_read_timeout 300;proxy_send_timeout 300;proxy_buffering off;}}' > /etc/nginx/conf.d/default.conf && exec nginx -g 'daemon off;'",
+    ]
   }
 
   tags = local.common_tags

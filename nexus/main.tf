@@ -37,22 +37,11 @@ resource "null_resource" "set_admin_password" {
     nexus_url     = local.nexus_url
   }
 
+  # No interpreter override — Terraform uses cmd.exe on Windows, sh on Linux/macOS.
+  # Values are inlined by Terraform so no shell env var syntax ($VAR / %VAR%) is needed.
+  # || is supported by both cmd.exe and sh: run second curl only if admin123 auth fails.
   provisioner "local-exec" {
-    interpreter = ["bash", "-c"]
-    environment = {
-      NEXUS_URL    = local.nexus_url
-      NEW_PASSWORD = var.admin_password
-    }
-    command = <<-EOT
-      curl -sf -u admin:admin123 \
-        -X PUT "$NEXUS_URL/service/rest/v1/security/users/admin/change-password" \
-        -H "Content-Type: text/plain" \
-        -d "$NEW_PASSWORD" \
-      || curl -sf -u "admin:$NEW_PASSWORD" \
-        -X PUT "$NEXUS_URL/service/rest/v1/security/users/admin/change-password" \
-        -H "Content-Type: text/plain" \
-        -d "$NEW_PASSWORD"
-    EOT
+    command = "curl -sf -u admin:admin123 -X PUT \"${local.nexus_url}/service/rest/v1/security/users/admin/change-password\" -H \"Content-Type: text/plain\" -d \"${var.admin_password}\" || curl -sf -u \"admin:${var.admin_password}\" -X PUT \"${local.nexus_url}/service/rest/v1/security/users/admin/change-password\" -H \"Content-Type: text/plain\" -d \"${var.admin_password}\""
   }
 }
 

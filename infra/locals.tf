@@ -19,7 +19,7 @@ locals {
   # Private mode: private IP assigned to the container in the VNet subnet
   nexus_host = local.use_vnet ? azurerm_container_group.nexus.ip_address : azurerm_container_group.nexus.fqdn
 
-  nexus_base_url = "http://${local.nexus_host}:8081"
+  nexus_base_url = "http://${local.nexus_host}"
 
   # pip reads from the group (hosted first, then allowlist-filtered proxy)
   pypi_simple_url = "${local.nexus_base_url}/repository/pypi-group/simple/"
@@ -34,6 +34,7 @@ locals {
     "-Xmx${local.nexus_heap_gb}g",
     "-XX:MaxDirectMemorySize=${local.nexus_direct_gb}g",
     "-Djava.util.prefs.userRoot=/nexus-data/javaprefs",
+    "-Dapplication-port=80",
   ])
 
   common_tags = merge(

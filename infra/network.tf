@@ -70,7 +70,7 @@ resource "azurerm_subnet" "aci" {
 # ---------------------------------------------------------------------------
 # NSG — controls inbound traffic when vnet_integrated = true
 #
-# Rule: allow port 8081 from nsg_inbound_source (default: * = open)
+# Rule: allow port 80 from nsg_inbound_source (default: * = open)
 # To lock down: set nsg_inbound_source to your corporate CIDR in tfvars.
 # ---------------------------------------------------------------------------
 resource "azurerm_network_security_group" "aci" {
@@ -82,13 +82,13 @@ resource "azurerm_network_security_group" "aci" {
   tags                = local.common_tags
 
   security_rule {
-    name                       = "allow-nexus-8081-inbound"
+    name                       = "allow-nexus-80-inbound"
     priority                   = 100
     direction                  = "Inbound"
     access                     = "Allow"
     protocol                   = "Tcp"
     source_port_range          = "*"
-    destination_port_range     = "8081"
+    destination_port_range     = "80"
     source_address_prefix      = var.nsg_inbound_source
     destination_address_prefix = "*"
   }

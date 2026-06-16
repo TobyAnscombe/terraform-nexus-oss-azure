@@ -60,11 +60,11 @@ output "required_nsg_rule" {
 
     Add the following inbound rule to the NSG associated with your subnet:
 
-      Name                : allow-nexus-8081-inbound
+      Name                : allow-nexus-80-inbound
       Priority            : (choose an available priority, e.g. 100)
       Protocol            : TCP
       Source port ranges  : *
-      Destination port    : 8081
+      Destination port    : 80
       Source              : <CIDR of your pip clients / CI runners>
       Destination         : *
       Action              : Allow
@@ -73,12 +73,12 @@ output "required_nsg_rule" {
       az network nsg rule create \
         --resource-group  <nsg-resource-group> \
         --nsg-name        <nsg-name> \
-        --name            allow-nexus-8081-inbound \
+        --name            allow-nexus-80-inbound \
         --priority        100 \
         --protocol        Tcp \
         --direction       Inbound \
         --source-address-prefixes  '*' \
-        --destination-port-ranges  8081 \
+        --destination-port-ranges  80 \
         --access          Allow
 
     Nexus private IP : ${azurerm_container_group.nexus.ip_address}

@@ -187,7 +187,7 @@ Before setting `existing_subnet_id`, ensure the target subnet has:
      --delegations Microsoft.ContainerInstance/containerGroups
    ```
 
-2. **NSG rule** — inbound TCP 8081 from the sources that need to reach Nexus (pip clients, CI runners, etc.). This module does **not** create or modify NSGs on existing subnets.
+2. **NSG rule** — inbound TCP 80 from the sources that need to reach Nexus (pip clients, CI runners, etc.). This module does **not** create or modify NSGs on existing subnets.
 
 3. **Reachability** — `terraform apply` (Phase 2) must run from a machine that can reach the private IP.
 
@@ -197,10 +197,10 @@ Before setting `existing_subnet_id`, ensure the target subnet has:
 
 | Resource | Value |
 |----------|-------|
-| Web UI | http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081 |
-| pip index URL | http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-group/simple/ |
-| pip upload URL | http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-hosted/ |
-| R repo URL | http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/r-group/ |
+| Web UI | http://nexus-oss-3g1xti.uksouth.azurecontainer.io |
+| pip index URL | http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/pypi-group/simple/ |
+| pip upload URL | http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/pypi-hosted/ |
+| R repo URL | http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/r-group/ |
 | IP address | 4.250.120.71 |
 | Resource group | rg-nexus-oss |
 | Storage account | stnexusprod3g1xti |
@@ -216,7 +216,7 @@ Before setting `existing_subnet_id`, ensure the target subnet has:
 # ~/.pip/pip.conf  (macOS/Linux)
 # %APPDATA%\pip\pip.ini  (Windows)
 [global]
-index-url  = http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-group/simple/
+index-url  = http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/pypi-group/simple/
 trusted-host = nexus-oss-3g1xti.uksouth.azurecontainer.io
 ```
 
@@ -225,7 +225,7 @@ trusted-host = nexus-oss-3g1xti.uksouth.azurecontainer.io
 ```ini
 # .venv/pip.conf
 [global]
-index-url  = http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-group/simple/
+index-url  = http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/pypi-group/simple/
 trusted-host = nexus-oss-3g1xti.uksouth.azurecontainer.io
 ```
 
@@ -241,7 +241,7 @@ Add to `~/.Rprofile` (or `Rprofile.site` for system-wide):
 
 ```r
 options(repos = c(
-  NEXUS = "http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/r-group/",
+  NEXUS = "http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/r-group/",
   CRAN  = "@CRAN@"
 ))
 ```
@@ -251,7 +251,7 @@ The `CRAN = "@CRAN@"` fallback is kept so RStudio's mirror selector still works 
 ### Option 2 — Per session
 
 ```r
-options(repos = c(NEXUS = "http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/r-group/"))
+options(repos = c(NEXUS = "http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/r-group/"))
 install.packages("dplyr")
 ```
 
@@ -260,7 +260,7 @@ install.packages("dplyr")
 In `.Rprofile` at the project root (renv will pick this up):
 
 ```r
-options(repos = c(NEXUS = "http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/r-group/"))
+options(repos = c(NEXUS = "http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/r-group/"))
 ```
 
 > **RStudio note:** Once `options(repos)` points at Nexus, RStudio's *Packages → Install* panel uses Nexus automatically — no further IDE configuration is needed.
@@ -274,7 +274,7 @@ options(repos = c(NEXUS = "http://nexus-oss-3g1xti.uksouth.azurecontainer.io:808
 ```bash
 # First install — Nexus fetches from PyPI and caches
 pip install pandas \
-  --index-url http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-group/simple/ \
+  --index-url http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/pypi-group/simple/ \
   --trusted-host nexus-oss-3g1xti.uksouth.azurecontainer.io
 ```
 
@@ -282,7 +282,7 @@ pip install pandas \
 
 ```bash
 pip install flask \
-  --index-url http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-group/simple/ \
+  --index-url http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/pypi-group/simple/ \
   --trusted-host nexus-oss-3g1xti.uksouth.azurecontainer.io
 # Expected: ERROR: Could not find a version that satisfies the requirement flask
 ```
@@ -290,7 +290,7 @@ pip install flask \
 ### R — install and cache-hit test
 
 ```r
-options(repos = c(NEXUS = "http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/r-group/"))
+options(repos = c(NEXUS = "http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/r-group/"))
 install.packages("dplyr")
 ```
 
@@ -304,7 +304,7 @@ install.packages("shiny")
 
 ### Browse via the web UI
 
-1. Go to http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081
+1. Go to http://nexus-oss-3g1xti.uksouth.azurecontainer.io
 2. Click **Browse** in the left sidebar.
 3. Open **pypi-group** or **r-group** to see available packages.
 
@@ -365,7 +365,7 @@ pip download requests --no-deps -d /tmp/nx-upload/
 
 # Push to Nexus
 twine upload \
-  --repository-url http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-hosted/ \
+  --repository-url http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/pypi-hosted/ \
   -u admin -p 'YOUR_PASSWORD' \
   /tmp/nx-upload/*
 rm -rf /tmp/nx-upload
@@ -376,7 +376,7 @@ Or build and publish your own package:
 ```bash
 python -m build
 twine upload \
-  --repository-url http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081/repository/pypi-hosted/ \
+  --repository-url http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/pypi-hosted/ \
   -u YOUR_USER -p YOUR_PASSWORD \
   dist/*
 ```
@@ -389,7 +389,7 @@ Use the **web UI**: log in → **Browse → r-hosted → Upload component**, the
 
 ## Creating user accounts
 
-1. Log in to http://nexus-oss-3g1xti.uksouth.azurecontainer.io:8081 as `admin`.
+1. Log in to http://nexus-oss-3g1xti.uksouth.azurecontainer.io as `admin`.
 2. **Administration → Security → Users → Create local user**.
 3. Assign roles as appropriate:
 

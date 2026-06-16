@@ -28,7 +28,7 @@ resource "azurerm_container_group" "nexus" {
     memory = var.nexus_memory_gb
 
     ports {
-      port     = 8081
+      port     = 80
       protocol = "TCP"
     }
 
@@ -54,7 +54,7 @@ resource "azurerm_container_group" "nexus" {
     liveness_probe {
       http_get {
         path   = "/service/rest/v1/status"
-        port   = 8081
+        port   = 80
         scheme = "Http"
       }
       initial_delay_seconds = 90

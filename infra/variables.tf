@@ -95,7 +95,7 @@ variable "existing_subnet_id" {
       - The managed VNet, subnet, and NSG created by this module are NOT provisioned.
       - ACI receives a private IP from the provided subnet (vnet_integrated mode
         is implied — no public IP or DNS label is assigned).
-      - You are responsible for NSG rules on the subnet: port 8081 must be open
+      - You are responsible for NSG rules on the subnet: port 80 must be open
         from any source that needs to reach Nexus (pip clients, CI runners, etc.).
       - The subnet must already be delegated to
         Microsoft.ContainerInstance/containerGroups.
@@ -161,7 +161,7 @@ variable "restrict_storage_to_vnet" {
 
 variable "nsg_inbound_source" {
   description = <<-EOF
-    Source address prefix for the NSG inbound rule on port 8081.
+    Source address prefix for the NSG inbound rule on port 80.
     Only applies to the managed NSG (i.e. when existing_subnet_id is NOT set).
     Default "*" = open to the internet (fine for public deployments).
     When going private, set to your corporate/VPN CIDR, e.g. "10.0.0.0/8".

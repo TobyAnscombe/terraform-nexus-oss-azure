@@ -517,15 +517,71 @@ az container exec \
 
 ## Upgrading Nexus
 
-1. Check the [Nexus 3 release notes](https://help.sonatype.com/en/sonatype-nexus-repository-release-notes.html) for breaking changes.
-2. In [infra/container.tf](infra/container.tf), update the image tag:
+### Why upgrade
+
+Sonatype publishes new Nexus 3 releases roughly monthly. Reasons to upgrade:
+- **Security patches** — CVEs in Nexus itself or its bundled Java/JVM components
+- **Bug fixes** — routing rule edge cases, provider API changes that affect the `datadrivers/nexus` Terraform provider
+- **New features** — new repo formats, improved REST API coverage
+
+Always check the [Nexus 3 release notes](https://help.sonatype.com/en/sonatype-nexus-repository-release-notes.html) before upgrading — major version jumps (e.g. 3.x → 3.y where y is a new LTS line) sometimes rename REST endpoints.
+
+### Impact
+
+| What changes | Impact |
+|---|---|
+| ACI container replaced | **~3–5 minutes downtime** — pip installs fail during this window |
+| DB migration (automatic on first boot) | Additional **1–10 minutes** for large version jumps; Nexus logs show progress |
+| Azure Files share | **Not touched** — all cached packages, blobs, and OrientDB/H2 data survive |
+| Nexus configuration | **Not touched** — repos, routing rules, roles, and users are stored in the data volume |
+
+Schedule upgrades during a maintenance window. pip clients will get connection errors until Nexus restarts and the liveness probe passes.
+
+### Steps
+
+1. **Check release notes** for breaking changes or required configuration updates.
+
+2. **Update the image tag** in `infra/container.tf`:
    ```hcl
    image = "sonatype/nexus3:3.X.Y"
    ```
-3. Run `terraform apply` from `infra/` — ACI replaces the container; Nexus runs DB migrations on first boot.
-4. Re-run `terraform apply` from `nexus/` if any provider-managed configuration needs to be reconfirmed.
 
-> The Azure Files share holds all persistent data and survives container replacement.
+3. **Apply the infra change** — ACI tears down and recreates the container:
+
+   **macOS / Linux**
+   ```bash
+   cd infra && terraform apply
+   ```
+   **Windows (PowerShell)**
+   ```powershell
+   cd infra; terraform apply
+   ```
+
+   Terraform will show the container group as `forces replacement`. The Azure Files share is not in this plan and is not affected.
+
+4. **Wait for Nexus to start** — the `time_sleep.nexus_ready` resource waits 2 minutes. Nexus DB migrations run during this time. For major version bumps, check the container logs until you see `Started Sonatype Nexus`:
+   ```bash
+   az container logs --resource-group rg-nexus-oss --name aci-prod-nexus-oss --container-name nexus --follow
+   ```
+
+5. **Verify with the smoke test**:
+   ```powershell
+   .\scripts\smoke-test.ps1
+   ```
+
+6. **Re-apply nexus/ if needed** — usually not required, but run it if Phase 2 configuration drifted or if the release notes mention REST API changes:
+   ```powershell
+   cd nexus; terraform apply
+   ```
+
+### Rollback
+
+If the new version has a startup failure, revert the tag in `infra/container.tf` to the previous version and re-apply. The data volume is compatible — Nexus does not write a migration flag that prevents downgrading within a minor version series.
+
+> **Downgrading across a major version boundary** (e.g. 3.y → 3.x where the DB schema changed) is not supported by Sonatype and may corrupt the data volume. Always snapshot the Azure Files share before a major upgrade:
+> ```bash
+> az storage share snapshot --account-name <storage-account-name> --name nexus-data
+> ```
 
 ---
 
@@ -597,7 +653,8 @@ az group delete --name rg-nexus-tf-state
 │
 ├── scripts/
 │   ├── create-backend.sh          Bash: provision remote state storage + write backend.hcl
-│   └── create-backend.ps1         PowerShell: same as above for Windows
+│   ├── create-backend.ps1         PowerShell: same as above for Windows
+│   └── smoke-test.ps1             PowerShell: end-to-end deployment validation
 └── .github/
     └── workflows/
         └── ci.yml                 infra (CI) → infra-apply → nexus-config (CI) → nexus-config-apply

@@ -26,6 +26,9 @@ locals {
   # twine uploads go directly to the hosted repo
   pypi_upload_url = "${local.nexus_base_url}/repository/pypi-hosted/"
 
+  # R uses the group root URL; R itself appends /src/contrib/, /bin/windows/, etc.
+  r_cran_url = "${local.nexus_base_url}/repository/r-group/"
+
   # JVM tuning: heap ≈ 2/3 RAM, direct memory ≈ 1/3
   nexus_heap_gb   = max(1, floor(var.nexus_memory_gb * 0.67))
   nexus_direct_gb = max(1, floor(var.nexus_memory_gb * 0.33))

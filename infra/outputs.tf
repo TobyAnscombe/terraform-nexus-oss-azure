@@ -126,3 +126,32 @@ output "twine_upload_example" {
   description = "twine command to publish a package. Any user with the pypi-authenticated-deployer role can run this."
   value       = "twine upload --repository-url ${local.pypi_upload_url} -u YOURUSER -p YOURPASSWORD dist/*"
 }
+
+# ---------------------------------------------------------------------------
+# R / CRAN client configuration
+# ---------------------------------------------------------------------------
+
+output "r_cran_url" {
+  description = "CRAN mirror URL — the root URL R appends platform-specific paths to."
+  value       = local.r_cran_url
+}
+
+output "r_options_anonymous" {
+  description = "R options() call for anonymous users (read-only). Paste into ~/.Rprofile."
+  value       = <<-EOF
+    options(repos = c(
+      NEXUS = "${local.r_cran_url}",
+      CRAN  = "@CRAN@"
+    ))
+  EOF
+}
+
+output "r_options_authenticated" {
+  description = "R options() call for authenticated users (read + upload). Replace YOURUSER / YOURPASSWORD."
+  value       = <<-EOF
+    options(repos = c(
+      NEXUS = "http://YOURUSER:YOURPASSWORD@${trimprefix(local.r_cran_url, "http://")}",
+      CRAN  = "@CRAN@"
+    ))
+  EOF
+}

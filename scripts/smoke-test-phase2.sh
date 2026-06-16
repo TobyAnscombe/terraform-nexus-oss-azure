@@ -50,7 +50,7 @@ check_http() {
   [[ ${#expect[@]} -eq 0 ]] && expect=("200")
 
   local code
-  code=$(curl -s -o /dev/null -w "%{http_code}" "${curl_args[@]}" "$url")
+  code=$(curl -s -o /dev/null -w "%{http_code}" ${curl_args[@]+"${curl_args[@]}"} "$url")
 
   local ok=false
   for e in "${expect[@]}"; do [[ "$code" == "$e" ]] && ok=true && break; done

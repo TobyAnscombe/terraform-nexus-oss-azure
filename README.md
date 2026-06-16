@@ -244,13 +244,13 @@ Before setting `existing_subnet_id`, ensure the target subnet has:
 
 | Resource | Value |
 |----------|-------|
-| Web UI | http://nexus-oss-3g1xti.uksouth.azurecontainer.io |
-| pip index URL | http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/pypi-group/simple/ |
-| pip upload URL | http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/pypi-hosted/ |
-| R repo URL | http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/r-group/ |
+| Web UI | http://nexus-oss-zlnu5d.uksouth.azurecontainer.io |
+| pip index URL | http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/pypi-group/simple/ |
+| pip upload URL | http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/pypi-hosted/ |
+| R repo URL | http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/r-group/ |
 | IP address | 4.250.120.71 |
 | Resource group | rg-nexus-oss |
-| Storage account | stnexusprod3g1xti |
+| Storage account | stnexusprodzlnu5d |
 | Azure region | UK South |
 
 ---
@@ -263,8 +263,8 @@ Before setting `existing_subnet_id`, ensure the target subnet has:
 # ~/.pip/pip.conf  (macOS/Linux)
 # %APPDATA%\pip\pip.ini  (Windows)
 [global]
-index-url  = http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/pypi-group/simple/
-trusted-host = nexus-oss-3g1xti.uksouth.azurecontainer.io
+index-url  = http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/pypi-group/simple/
+trusted-host = nexus-oss-zlnu5d.uksouth.azurecontainer.io
 ```
 
 ### Option 2 — Per virtualenv
@@ -272,8 +272,8 @@ trusted-host = nexus-oss-3g1xti.uksouth.azurecontainer.io
 ```ini
 # .venv/pip.conf
 [global]
-index-url  = http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/pypi-group/simple/
-trusted-host = nexus-oss-3g1xti.uksouth.azurecontainer.io
+index-url  = http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/pypi-group/simple/
+trusted-host = nexus-oss-zlnu5d.uksouth.azurecontainer.io
 ```
 
 > **Why `trusted-host`?** The repo runs on plain HTTP. pip refuses unencrypted connections by default — `trusted-host` marks this host as safe. Remove it if you add TLS later.
@@ -288,7 +288,7 @@ Add to `~/.Rprofile` (or `Rprofile.site` for system-wide):
 
 ```r
 options(repos = c(
-  NEXUS = "http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/r-group/",
+  NEXUS = "http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/r-group/",
   CRAN  = "@CRAN@"
 ))
 ```
@@ -298,7 +298,7 @@ The `CRAN = "@CRAN@"` fallback is kept so RStudio's mirror selector still works 
 ### Option 2 — Per session
 
 ```r
-options(repos = c(NEXUS = "http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/r-group/"))
+options(repos = c(NEXUS = "http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/r-group/"))
 install.packages("dplyr")
 ```
 
@@ -307,7 +307,7 @@ install.packages("dplyr")
 In `.Rprofile` at the project root (renv will pick this up):
 
 ```r
-options(repos = c(NEXUS = "http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/r-group/"))
+options(repos = c(NEXUS = "http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/r-group/"))
 ```
 
 > **RStudio note:** Once `options(repos)` points at Nexus, RStudio's *Packages → Install* panel uses Nexus automatically — no further IDE configuration is needed.
@@ -321,23 +321,23 @@ options(repos = c(NEXUS = "http://nexus-oss-3g1xti.uksouth.azurecontainer.io/rep
 ```bash
 # First install — Nexus fetches from PyPI and caches
 pip install pandas \
-  --index-url http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/pypi-group/simple/ \
-  --trusted-host nexus-oss-3g1xti.uksouth.azurecontainer.io
+  --index-url http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/pypi-group/simple/ \
+  --trusted-host nexus-oss-zlnu5d.uksouth.azurecontainer.io
 ```
 
 ### Python — verify the allowlist blocks unlisted packages
 
 ```bash
 pip install flask \
-  --index-url http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/pypi-group/simple/ \
-  --trusted-host nexus-oss-3g1xti.uksouth.azurecontainer.io
+  --index-url http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/pypi-group/simple/ \
+  --trusted-host nexus-oss-zlnu5d.uksouth.azurecontainer.io
 # Expected: ERROR: Could not find a version that satisfies the requirement flask
 ```
 
 ### R — install and cache-hit test
 
 ```r
-options(repos = c(NEXUS = "http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/r-group/"))
+options(repos = c(NEXUS = "http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/r-group/"))
 install.packages("dplyr")
 ```
 
@@ -351,7 +351,7 @@ install.packages("shiny")
 
 ### Browse via the web UI
 
-1. Go to http://nexus-oss-3g1xti.uksouth.azurecontainer.io
+1. Go to http://nexus-oss-zlnu5d.uksouth.azurecontainer.io
 2. Click **Browse** in the left sidebar.
 3. Open **pypi-group** or **r-group** to see available packages.
 
@@ -412,7 +412,7 @@ pip download requests --no-deps -d /tmp/nx-upload/
 
 # Push to Nexus
 twine upload \
-  --repository-url http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/pypi-hosted/ \
+  --repository-url http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/pypi-hosted/ \
   -u admin -p 'YOUR_PASSWORD' \
   /tmp/nx-upload/*
 rm -rf /tmp/nx-upload
@@ -423,7 +423,7 @@ Or build and publish your own package:
 ```bash
 python -m build
 twine upload \
-  --repository-url http://nexus-oss-3g1xti.uksouth.azurecontainer.io/repository/pypi-hosted/ \
+  --repository-url http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/pypi-hosted/ \
   -u YOUR_USER -p YOUR_PASSWORD \
   dist/*
 ```
@@ -436,7 +436,7 @@ Use the **web UI**: log in → **Browse → r-hosted → Upload component**, the
 
 ## Creating user accounts
 
-1. Log in to http://nexus-oss-3g1xti.uksouth.azurecontainer.io as `admin`.
+1. Log in to http://nexus-oss-zlnu5d.uksouth.azurecontainer.io as `admin`.
 2. **Administration → Security → Users → Create local user**.
 3. Assign roles as appropriate:
 
@@ -489,6 +489,12 @@ The routing rule requires two matchers per package (`/simple/` and `/packages/`)
 ### R package on the allowlist still fails to install
 
 Three matchers per package (source + Windows binary + macOS binary) are generated automatically. Verify the package name in `var.r_allowlist`. Dot escaping (e.g. `data.table`) is handled automatically.
+
+### CRAN metadata fetch returns 404 or 403
+
+Nexus does not support the bare `PACKAGES` endpoint for the R format — it returns 404 with "This metadata type is not supported for now". R clients request `PACKAGES.gz`, `PACKAGES.rds`, or `PACKAGES.bz2` instead, which Nexus does proxy correctly.
+
+If `PACKAGES.gz` returns 403 the routing rule is blocking it. This happens when the regex uses `($|\\.)` which only matches a bare trailing dot, not extensions like `.gz`. The correct pattern is `(\\.[^/]*)?$`. Run `terraform apply` from `nexus/` to push the updated matchers.
 
 ### Container logs
 
@@ -654,7 +660,10 @@ az group delete --name rg-nexus-tf-state
 ├── scripts/
 │   ├── create-backend.sh          Bash: provision remote state storage + write backend.hcl
 │   ├── create-backend.ps1         PowerShell: same as above for Windows
-│   └── smoke-test.ps1             PowerShell: end-to-end deployment validation
+│   ├── smoke-test.sh              Bash: Phase 1+2 smoke test (nginx→Nexus chain, PyPI, CRAN)
+│   ├── smoke-test.ps1             PowerShell: same as above for Windows
+│   ├── smoke-test-phase2.sh       Bash: comprehensive Phase 2 validation (auth, repos, routing rules, pip client)
+│   └── smoke-test-phase2.ps1      PowerShell: same as above for Windows
 └── .github/
     └── workflows/
         └── ci.yml                 infra (CI) → infra-apply → nexus-config (CI) → nexus-config-apply

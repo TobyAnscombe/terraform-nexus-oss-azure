@@ -100,9 +100,16 @@ az account set --subscription "<subscription-id>"
 
 Both scripts create the storage account, blob container, and write `backend.hcl` in the repo root. Copy and adjust the key for each phase:
 
+**macOS / Linux**
 ```bash
 sed 's/nexus-oss.terraform.tfstate/infra.tfstate/' backend.hcl > infra/backend.hcl
 sed 's/nexus-oss.terraform.tfstate/nexus.tfstate/'  backend.hcl > nexus/backend.hcl
+```
+
+**Windows (PowerShell)**
+```powershell
+(Get-Content backend.hcl) -replace 'nexus-oss.terraform.tfstate','infra.tfstate' | Set-Content infra\backend.hcl
+(Get-Content backend.hcl) -replace 'nexus-oss.terraform.tfstate','nexus.tfstate'  | Set-Content nexus\backend.hcl
 ```
 
 `backend.hcl` is git-ignored. See [infra/backend.hcl.example](infra/backend.hcl.example) and [nexus/backend.hcl.example](nexus/backend.hcl.example) for the format.

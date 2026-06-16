@@ -62,7 +62,7 @@ check_http() {
     local want; want=$(IFS='/'; echo "${expect[*]}")
     printf "  ${RED}[FAIL]${RESET} %s  (HTTP %s, expected %s)\n" "$label" "$code" "$want"
     printf "         ${GRAY}%s${RESET}\n" "$url"
-    ((fail++))
+    fail=$((fail+1))
   fi
 }
 
@@ -76,7 +76,7 @@ check_body() {
     pass=$((pass+1))
   else
     printf "  ${RED}[FAIL]${RESET} %s  (expected '%s' in response)\n" "$label" "$contains"
-    ((fail++))
+    fail=$((fail+1))
   fi
 }
 
@@ -92,7 +92,7 @@ echo "Anonymous access"
 check_http 'PyPI group index readable'              "$NEXUS_URL/repository/pypi-group/simple/"
 check_http 'Allowlisted package accessible (numpy)' "$NEXUS_URL/repository/pypi-group/simple/numpy/"
 check_http 'Blocked package denied (flask)'         "$NEXUS_URL/repository/pypi-group/simple/flask/" 403 404
-check_http 'CRAN PACKAGES index readable'           "$NEXUS_URL/repository/r-group/src/contrib/PACKAGES"
+check_http 'CRAN PACKAGES index readable'           "$NEXUS_URL/repository/r-group/src/contrib/PACKAGES.gz"
 check_http 'Anonymous write rejected (pypi-hosted)' "$NEXUS_URL/repository/pypi-hosted/" 401 -- -X POST
 
 # ── pip client tests ─────────────────────────────────────────────────────────

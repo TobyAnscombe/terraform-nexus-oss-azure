@@ -64,7 +64,7 @@ Write-Host "Phase 2 — Nexus configuration"
 Check 'PyPI group index (anonymous read)'     "$NexusUrl/repository/pypi-group/simple/"
 Check 'Allowlisted package accessible (numpy)' "$NexusUrl/repository/pypi-group/simple/numpy/"
 Check 'Blocked package denied (flask)'        "$NexusUrl/repository/pypi-group/simple/flask/"  -Expect @(403, 404)
-Check 'CRAN PACKAGES index (anonymous read)'  "$NexusUrl/repository/r-group/src/contrib/PACKAGES"
+Check 'CRAN PACKAGES index (anonymous read)'  "$NexusUrl/repository/r-group/src/contrib/PACKAGES.gz"
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 Write-Host ""

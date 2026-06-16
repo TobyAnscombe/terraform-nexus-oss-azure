@@ -178,10 +178,10 @@ resource "nexus_routing_rule" "r_cran_allowlist" {
   mode        = "ALLOW"
   matchers = toset(concat(
     [
-      "^/src/contrib/PACKAGES($|\\.)",
+      "^/src/contrib/PACKAGES(\\.[^/]*)?$",
       "^/src/contrib/Meta/",
-      "^/bin/windows/contrib/[^/]+/PACKAGES($|\\.)",
-      "^/bin/macosx/[^/]+/contrib/[^/]+/PACKAGES($|\\.)",
+      "^/bin/windows/contrib/[^/]+/PACKAGES(\\.[^/]*)?$",
+      "^/bin/macosx/[^/]+/contrib/[^/]+/PACKAGES(\\.[^/]*)?$",
     ],
     flatten([
       for pkg in local.all_r_packages : [

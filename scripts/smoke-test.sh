@@ -69,7 +69,7 @@ echo "Phase 2 — Nexus configuration"
 check "PyPI group index (anonymous read)"      "$NEXUS_URL/repository/pypi-group/simple/"
 check "Allowlisted package accessible (numpy)" "$NEXUS_URL/repository/pypi-group/simple/numpy/"
 check "Blocked package denied (flask)"         "$NEXUS_URL/repository/pypi-group/simple/flask/" 403 404
-check "CRAN PACKAGES index (anonymous read)"   "$NEXUS_URL/repository/r-group/src/contrib/PACKAGES"
+check "CRAN PACKAGES index (anonymous read)"   "$NEXUS_URL/repository/r-group/src/contrib/PACKAGES.gz"
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""

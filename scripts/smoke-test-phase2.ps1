@@ -85,7 +85,7 @@ Write-Host "Anonymous access"
 CheckHttp 'PyPI group index readable'           "$NexusUrl/repository/pypi-group/simple/"
 CheckHttp 'Allowlisted package accessible (numpy)' "$NexusUrl/repository/pypi-group/simple/numpy/"
 CheckHttp 'Blocked package denied (flask)'      "$NexusUrl/repository/pypi-group/simple/flask/"   -Expect @(403, 404)
-CheckHttp 'CRAN PACKAGES index readable'        "$NexusUrl/repository/r-group/src/contrib/PACKAGES"
+CheckHttp 'CRAN PACKAGES index readable'        "$NexusUrl/repository/r-group/src/contrib/PACKAGES.gz"
 CheckHttp 'Anonymous write rejected (pypi-hosted)' "$NexusUrl/repository/pypi-hosted/" -Expect @(401) -CurlArgs @('-X', 'POST')
 
 # ── pip client tests ─────────────────────────────────────────────────────────

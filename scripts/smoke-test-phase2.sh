@@ -40,17 +40,17 @@ check_http() {
   local label="$1" url="$2"
   shift 2
   local expect=()
-  local curl_args=()
-  # remaining args: expected codes until '--', then curl args
+  # Collect expected HTTP codes (args before '--')
   while [[ $# -gt 0 && "$1" != '--' ]]; do
     expect+=("$1"); shift
   done
   [[ $# -gt 0 ]] && shift  # consume '--'
-  curl_args=("$@")
+  # $@ now holds optional extra curl args; "$@" expands to nothing when empty
+  # (unlike "${arr[@]}" which triggers unbound variable on bash 3.2 with set -u)
   [[ ${#expect[@]} -eq 0 ]] && expect=("200")
 
   local code
-  code=$(curl -s -o /dev/null -w "%{http_code}" ${curl_args[@]+"${curl_args[@]}"} "$url")
+  code=$(curl -s -o /dev/null -w "%{http_code}" "$@" "$url")
 
   local ok=false
   for e in "${expect[@]}"; do [[ "$code" == "$e" ]] && ok=true && break; done

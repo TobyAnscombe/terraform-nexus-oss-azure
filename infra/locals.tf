@@ -39,6 +39,10 @@ locals {
     "-Djava.util.prefs.userRoot=/nexus-data/javaprefs",
   ])
 
+  # nginx allow/deny block injected into the server config.
+  # Empty string when allowed_cidrs is not set (no IP filtering).
+  nginx_ip_filter = length(var.allowed_cidrs) > 0 ? "${join("", [for c in var.allowed_cidrs : "allow ${c};"])}deny all;" : ""
+
   common_tags = merge(
     {
       environment = var.environment

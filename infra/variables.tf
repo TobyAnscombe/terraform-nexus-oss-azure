@@ -169,3 +169,15 @@ variable "nsg_inbound_source" {
   type        = string
   default     = "*"
 }
+
+variable "allowed_cidrs" {
+  description = <<-EOF
+    Optional list of CIDR blocks permitted to reach Nexus through nginx.
+    Applies on top of whichever networking option (A/B/C) is active.
+    When non-empty, nginx allows listed CIDRs and returns 403 to all others.
+    Leave empty (default) to allow all traffic — rely on NSG / VNet instead.
+    Changing this value forces replacement of the ACI container group.
+  EOF
+  type    = list(string)
+  default = []
+}

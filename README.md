@@ -222,6 +222,10 @@ cd nexus && terraform apply
 | Managed private | `null` | `true` | Private IP in snet-aci | Created and used |
 | Existing subnet | `<resource-id>` | ignored | Private IP in your subnet | **Not created** |
 
+### nginx IP access (`allowed_cidrs`)
+
+Independent of A/B/C — set `allowed_cidrs` in `infra/terraform.tfvars` to restrict Nexus to specific source CIDRs at the nginx layer. When non-empty, nginx returns 403 to any IP not in the list. Leave empty (default) to allow all traffic and rely on the NSG or VNet for restriction instead. Changing this value forces replacement of the container group (~3–5 min downtime).
+
 ### Existing subnet prerequisites
 
 Before setting `existing_subnet_id`, ensure the target subnet has:

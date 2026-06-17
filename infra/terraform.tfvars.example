@@ -33,6 +33,13 @@ nsg_inbound_source = "*"
 # vnet_integrated and nsg_inbound_source are ignored when existing_subnet_id is set.
 # existing_subnet_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-hub/providers/Microsoft.Network/virtualNetworks/vnet-hub/subnets/snet-nexus"
 
+# ── nginx IP access ───────────────────────────────────────────────────────────
+# Optional: restrict Nexus to specific CIDRs at the nginx layer.
+# Applies on top of whichever networking option (A/B/C) is active.
+# Leave empty to allow all traffic (rely on NSG / VNet for restriction instead).
+# allowed_cidrs = ["10.0.0.0/8", "172.16.0.0/12", "203.0.113.45/32"]
+allowed_cidrs = []
+
 # ── Optional tags ─────────────────────────────────────────────────────────────
 tags = {
   owner   = "devops-team"

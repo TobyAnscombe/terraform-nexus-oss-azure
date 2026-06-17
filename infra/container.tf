@@ -94,7 +94,7 @@ resource "azurerm_container_group" "nexus" {
     #                               prevents OOM on large package uploads (wheels, R tarballs)
     commands = [
       "/bin/sh", "-c",
-      "echo 'server{listen 80;client_max_body_size 0;location /{proxy_pass http://localhost:8081;proxy_set_header Host $host;proxy_set_header X-Real-IP $remote_addr;proxy_read_timeout 300;proxy_send_timeout 300;proxy_buffering off;proxy_request_buffering off;}}' > /etc/nginx/conf.d/default.conf && exec nginx -g 'daemon off;'",
+      "echo 'server{listen 80;client_max_body_size 0;${local.nginx_ip_filter}location /{proxy_pass http://localhost:8081;proxy_set_header Host $host;proxy_set_header X-Real-IP $remote_addr;proxy_read_timeout 300;proxy_send_timeout 300;proxy_buffering off;proxy_request_buffering off;}}' > /etc/nginx/conf.d/default.conf && exec nginx -g 'daemon off;'",
     ]
 
     liveness_probe {

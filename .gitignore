@@ -22,7 +22,11 @@ backend.hcl
 *.swo
 .idea/
 .vscode/
+<<<<<<< Updated upstream
 
 CLAUDE.md
 tasks/
 .claude/
+=======
+.\terraform.exe
+>>>>>>> Stashed changes

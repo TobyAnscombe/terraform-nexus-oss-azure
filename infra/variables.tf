@@ -178,6 +178,6 @@ variable "allowed_cidrs" {
     Leave empty (default) to allow all traffic — rely on NSG / VNet instead.
     Changing this value forces replacement of the ACI container group.
   EOF
-  type    = list(string)
-  default = []
+  type        = list(string)
+  default     = []
 }

@@ -49,7 +49,7 @@ echo "    Using subscription: $SUBSCRIPTION"
 # ---------------------------------------------------------------------------
 # Storage account (globally unique name)
 # ---------------------------------------------------------------------------
-SUFFIX=$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 6)
+SUFFIX=$(openssl rand -hex 3)
 SA_NAME="sttfstate${SUFFIX}"
 
 echo "==> Creating resource group '$RG' in $LOCATION ..."

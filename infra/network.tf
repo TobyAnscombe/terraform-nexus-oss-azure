@@ -103,3 +103,27 @@ resource "azurerm_subnet_network_security_group_association" "aci" {
   subnet_id                 = azurerm_subnet.aci[0].id
   network_security_group_id = azurerm_network_security_group.aci[0].id
 }
+
+# ---------------------------------------------------------------------------
+# Option C — existing subnet validation
+#
+# Reading the subnet during plan serves two purposes:
+#   1. Permission check — if the Terraform runner lacks Network Contributor on
+#      the VNet resource group, plan fails immediately with AuthorizationFailed
+#      rather than part-way through apply.
+#   2. Delegation metadata — consumed by the precondition on the container group
+#      to verify Microsoft.ContainerInstance/containerGroups is set.
+#
+# Grant the required role before running terraform plan:
+#   az role assignment create \
+#     --assignee "<sp-object-id>" \
+#     --role "Network Contributor" \
+#     --scope "/subscriptions/<sub>/resourceGroups/<vnet-rg>"
+# ---------------------------------------------------------------------------
+data "azurerm_subnet" "existing" {
+  count = var.existing_subnet_id != null ? 1 : 0
+
+  name                 = local.existing_subnet_name
+  virtual_network_name = local.existing_subnet_vnet
+  resource_group_name  = local.existing_subnet_rg
+}

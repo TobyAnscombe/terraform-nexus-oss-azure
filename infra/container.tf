@@ -112,6 +112,19 @@ resource "azurerm_container_group" "nexus" {
   }
 
   tags = local.common_tags
+
+  lifecycle {
+    precondition {
+      condition = var.existing_subnet_id == null || try(
+        anytrue([
+          for d in data.azurerm_subnet.existing[0].delegation :
+          anytrue([for sd in d.service_delegation : sd.name == "Microsoft.ContainerInstance/containerGroups"])
+        ]),
+        false
+      )
+      error_message = "The subnet '${coalesce(var.existing_subnet_id, "n/a")}' must be delegated to Microsoft.ContainerInstance/containerGroups. Run: az network vnet subnet update --ids '${coalesce(var.existing_subnet_id, "n/a")}' --delegations Microsoft.ContainerInstance/containerGroups"
+    }
+  }
 }
 
 # Gate the nexus_base_url output until Nexus has had time to initialise its

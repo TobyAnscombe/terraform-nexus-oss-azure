@@ -14,6 +14,13 @@ locals {
     : try(azurerm_subnet.aci[0].id, null)
   )
 
+  # Parse existing_subnet_id into components for the data source lookup.
+  # Format: /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Network/virtualNetworks/<vnet>/subnets/<name>
+  existing_subnet_id_parts = var.existing_subnet_id != null ? split("/", var.existing_subnet_id) : []
+  existing_subnet_rg       = length(local.existing_subnet_id_parts) > 4 ? local.existing_subnet_id_parts[4] : null
+  existing_subnet_vnet     = length(local.existing_subnet_id_parts) > 8 ? local.existing_subnet_id_parts[8] : null
+  existing_subnet_name     = length(local.existing_subnet_id_parts) > 10 ? local.existing_subnet_id_parts[10] : null
+
   # The hostname used in every URL.
   # Public mode : Azure-assigned FQDN  (e.g. nexus-oss-3g1xti.uksouth.azurecontainer.io)
   # Private mode: private IP assigned to the container in the VNet subnet

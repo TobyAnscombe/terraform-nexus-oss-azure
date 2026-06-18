@@ -230,7 +230,16 @@ Independent of A/B/C — set `allowed_cidrs` in `infra/terraform.tfvars` to rest
 
 Before setting `existing_subnet_id`, ensure the target subnet has:
 
-1. **Delegation** — `Microsoft.ContainerInstance/containerGroups`
+1. **Network Contributor role** — the identity running Terraform must have Network Contributor on the VNet resource group. Without it, `terraform plan` fails immediately with `AuthorizationFailed`:
+
+   ```bash
+   az role assignment create \
+     --assignee "<sp-object-id>" \
+     --role "Network Contributor" \
+     --scope "/subscriptions/<sub>/resourceGroups/<vnet-rg>"
+   ```
+
+2. **Delegation** — `Microsoft.ContainerInstance/containerGroups`. Terraform checks this during plan and prints a clear error if missing:
 
    ```bash
    az network vnet subnet update \
@@ -238,9 +247,9 @@ Before setting `existing_subnet_id`, ensure the target subnet has:
      --delegations Microsoft.ContainerInstance/containerGroups
    ```
 
-2. **NSG rule** — inbound TCP 80 from the sources that need to reach Nexus (pip clients, CI runners, etc.). This module does **not** create or modify NSGs on existing subnets.
+3. **NSG rule** — inbound TCP 80 from the sources that need to reach Nexus (pip clients, CI runners, etc.). This module does **not** create or modify NSGs on existing subnets.
 
-3. **Reachability** — `terraform apply` (Phase 2) must run from a machine that can reach the private IP.
+4. **Reachability** — `terraform apply` (Phase 2) must run from a machine that can reach the private IP.
 
 ---
 

@@ -59,18 +59,18 @@ available even if PyPI or CRAN is unreachable.
 The ACI container group runs two containers that share `localhost`:
 
 ```
-Client (pip / R / browser)
-        │  port 80
-        ▼
-  nginx:1.27-alpine      ← only externally exposed port
-        │  proxy_pass localhost:8081
-        ▼
-  sonatype/nexus3        ← internal only (non-root, cannot bind <1024)
+Internet (HTTPS)
         │
-        └── /nexus-data  (Azure Files share — persists across restarts)
+        ▼
+  Cloudflare edge  ←  cloudflare/cloudflared  (outbound tunnel, no open ports)
+                               │  proxy localhost:8081
+                               ▼
+                     sonatype/nexus3           ← internal only (port 8081)
+                               │
+                               └── /nexus-data (Azure Files share — persists across restarts)
 ```
 
-Nexus runs as a non-root user and cannot bind to privileged ports. nginx proxies port 80 to Nexus on 8081, keeping Nexus off the public internet directly.
+No ports are exposed on Azure. cloudflared connects **outbound** to Cloudflare's network using the tunnel token; Cloudflare routes HTTPS traffic through the tunnel to Nexus. TLS termination happens at Cloudflare's edge — no certificate management required.
 
 ---
 
@@ -139,11 +139,19 @@ sed 's/nexus-oss.terraform.tfstate/nexus.tfstate/'  backend.hcl > nexus/backend.
 
 ### Phase 1 — Infrastructure
 
+Before deploying, create the Cloudflare Tunnel:
+
+1. In [Zero Trust dashboard](https://one.dash.cloudflare.com) → **Networks → Tunnels → Create a tunnel** (Cloudflared type)
+2. Under **Public Hostnames**, add: `<your-hostname>` → `http://localhost:8081`
+3. Copy the tunnel token into `infra/terraform.tfvars` as `cloudflare_tunnel_token`
+
+Then deploy:
+
 **macOS / Linux**
 ```bash
 cd infra
 cp terraform.tfvars.example terraform.tfvars
-# edit terraform.tfvars as needed
+# fill in cloudflare_tunnel_token and cloudflare_tunnel_hostname
 
 terraform init --backend-config=backend.hcl
 terraform apply
@@ -153,7 +161,7 @@ terraform apply
 ```powershell
 cd infra
 Copy-Item terraform.tfvars.example terraform.tfvars
-# edit terraform.tfvars as needed
+# fill in cloudflare_tunnel_token and cloudflare_tunnel_hostname
 
 terraform init -backend-config=backend.hcl
 terraform apply
@@ -190,85 +198,42 @@ terraform apply
 
 Phase 2 reads the Nexus URL from Phase 1's remote state and changes the admin password from the Nexus default (`admin123`) to the value set in `admin_password`. Run Phase 1 fully before Phase 2.
 
-### Option B — Managed private VNet
-
-```bash
-# In infra/terraform.tfvars:
-# set vnet_integrated = true, nsg_inbound_source = "<your-cidr>"
-# run terraform apply from a machine on the VPN / ExpressRoute
-
-cd infra && terraform apply
-# Phase 2 must also run from a machine that can reach the private IP:
-cd nexus && terraform apply
-```
-
-### Option C — Existing subnet
-
-```bash
-# In infra/terraform.tfvars:
-# set existing_subnet_id = "/subscriptions/.../subnets/<name>"
-
-cd infra && terraform apply
-cd nexus && terraform apply
-```
 
 ---
 
-## Networking modes
+## Networking
 
-| Mode | `existing_subnet_id` | `vnet_integrated` | ACI access | Managed VNet |
-|------|----------------------|-------------------|------------|--------------|
-| Public | `null` | `false` | Public IP + DNS label | Created (unused) |
-| Managed private | `null` | `true` | Private IP in snet-aci | Created and used |
-| Existing subnet | `<resource-id>` | ignored | Private IP in your subnet | **Not created** |
+ACI is always deployed with a **private IP** in a managed VNet — no public IP, no exposed Azure ports. Configure the address space in `infra/terraform.tfvars`:
 
-### nginx IP access (`allowed_cidrs`)
+```hcl
+vnet_address_space = "10.100.0.0/16"
+aci_subnet_prefix  = "10.100.1.0/24"
+```
 
-Independent of A/B/C — set `allowed_cidrs` in `infra/terraform.tfvars` to restrict Nexus to specific source CIDRs at the nginx layer. When non-empty, nginx returns 403 to any IP not in the list. Leave empty (default) to allow all traffic and rely on the NSG or VNet for restriction instead. Changing this value forces replacement of the container group (~3–5 min downtime).
-
-### Existing subnet prerequisites
-
-Before setting `existing_subnet_id`, ensure the target subnet has:
-
-1. **Network Contributor role** — the identity running Terraform must have Network Contributor on the VNet resource group. Without it, `terraform plan` fails immediately with `AuthorizationFailed`:
-
-   ```bash
-   az role assignment create \
-     --assignee "<sp-object-id>" \
-     --role "Network Contributor" \
-     --scope "/subscriptions/<sub>/resourceGroups/<vnet-rg>"
-   ```
-
-2. **Delegation** — `Microsoft.ContainerInstance/containerGroups`. Terraform checks this during plan and prints a clear error if missing:
-
-   ```bash
-   az network vnet subnet update \
-     --resource-group <rg> --vnet-name <vnet> --name <subnet> \
-     --delegations Microsoft.ContainerInstance/containerGroups
-   ```
-
-3. **NSG rule** — inbound TCP 80 from the sources that need to reach Nexus (pip clients, CI runners, etc.). This module does **not** create or modify NSGs on existing subnets.
-
-4. **Reachability** — `terraform apply` (Phase 2) must run from a machine that can reach the private IP.
+Public access is via **Cloudflare Tunnel** only — the cloudflared sidecar connects outbound to Cloudflare, so no inbound NSG rules or TLS certificates are needed.
 
 ---
 
 ## Live deployment details
 
+Run `terraform output` from `infra/` after deploying to get your URLs. Example:
+
 | Resource | Value |
 |----------|-------|
-| Web UI | http://nexus-oss-zlnu5d.uksouth.azurecontainer.io |
-| pip index URL | http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/pypi-group/simple/ |
-| pip upload URL | http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/pypi-hosted/ |
-| R repo URL | http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/r-group/ |
-| IP address | 4.250.120.71 |
+| Web UI | https://nexus.example.com |
+| pip index URL | https://nexus.example.com/repository/pypi-group/simple/ |
+| pip upload URL | https://nexus.example.com/repository/pypi-hosted/ |
+| R repo URL | https://nexus.example.com/repository/r-group/ |
+| ACI private IP | (from `container_group_ip` output — VNet-internal only) |
 | Resource group | rg-nexus-oss |
-| Storage account | stnexusprodzlnu5d |
+| Storage account | (from `storage_account_name` output) |
 | Azure region | UK South |
 
 ---
 
 ## Configuring pip
+
+Replace `nexus.example.com` with your `cloudflare_tunnel_hostname`. No `trusted-host` needed — traffic is HTTPS via Cloudflare.
 
 ### Option 1 — Global (all projects on this machine)
 
@@ -276,8 +241,7 @@ Before setting `existing_subnet_id`, ensure the target subnet has:
 # ~/.pip/pip.conf  (macOS/Linux)
 # %APPDATA%\pip\pip.ini  (Windows)
 [global]
-index-url  = http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/pypi-group/simple/
-trusted-host = nexus-oss-zlnu5d.uksouth.azurecontainer.io
+index-url = https://nexus.example.com/repository/pypi-group/simple/
 ```
 
 ### Option 2 — Per virtualenv
@@ -285,15 +249,14 @@ trusted-host = nexus-oss-zlnu5d.uksouth.azurecontainer.io
 ```ini
 # .venv/pip.conf
 [global]
-index-url  = http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/pypi-group/simple/
-trusted-host = nexus-oss-zlnu5d.uksouth.azurecontainer.io
+index-url = https://nexus.example.com/repository/pypi-group/simple/
 ```
-
-> **Why `trusted-host`?** The repo runs on plain HTTP. pip refuses unencrypted connections by default — `trusted-host` marks this host as safe. Remove it if you add TLS later.
 
 ---
 
 ## Configuring R
+
+Replace `nexus.example.com` with your `cloudflare_tunnel_hostname`.
 
 ### Option 1 — Persistent (all sessions for this user)
 
@@ -301,7 +264,7 @@ Add to `~/.Rprofile` (or `Rprofile.site` for system-wide):
 
 ```r
 options(repos = c(
-  NEXUS = "http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/r-group/",
+  NEXUS = "https://nexus.example.com/repository/r-group/",
   CRAN  = "@CRAN@"
 ))
 ```
@@ -311,7 +274,7 @@ The `CRAN = "@CRAN@"` fallback is kept so RStudio's mirror selector still works 
 ### Option 2 — Per session
 
 ```r
-options(repos = c(NEXUS = "http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/r-group/"))
+options(repos = c(NEXUS = "https://nexus.example.com/repository/r-group/"))
 install.packages("dplyr")
 ```
 
@@ -320,7 +283,7 @@ install.packages("dplyr")
 In `.Rprofile` at the project root (renv will pick this up):
 
 ```r
-options(repos = c(NEXUS = "http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/r-group/"))
+options(repos = c(NEXUS = "https://nexus.example.com/repository/r-group/"))
 ```
 
 > **RStudio note:** Once `options(repos)` points at Nexus, RStudio's *Packages → Install* panel uses Nexus automatically — no further IDE configuration is needed.
@@ -334,23 +297,21 @@ options(repos = c(NEXUS = "http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/rep
 ```bash
 # First install — Nexus fetches from PyPI and caches
 pip install pandas \
-  --index-url http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/pypi-group/simple/ \
-  --trusted-host nexus-oss-zlnu5d.uksouth.azurecontainer.io
+  --index-url https://nexus.example.com/repository/pypi-group/simple/
 ```
 
 ### Python — verify the allowlist blocks unlisted packages
 
 ```bash
 pip install flask \
-  --index-url http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/pypi-group/simple/ \
-  --trusted-host nexus-oss-zlnu5d.uksouth.azurecontainer.io
+  --index-url https://nexus.example.com/repository/pypi-group/simple/
 # Expected: ERROR: Could not find a version that satisfies the requirement flask
 ```
 
 ### R — install and cache-hit test
 
 ```r
-options(repos = c(NEXUS = "http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/r-group/"))
+options(repos = c(NEXUS = "https://nexus.example.com/repository/r-group/"))
 install.packages("dplyr")
 ```
 
@@ -364,7 +325,7 @@ install.packages("shiny")
 
 ### Browse via the web UI
 
-1. Go to http://nexus-oss-zlnu5d.uksouth.azurecontainer.io
+1. Go to `https://nexus.example.com`
 2. Click **Browse** in the left sidebar.
 3. Open **pypi-group** or **r-group** to see available packages.
 
@@ -425,7 +386,7 @@ pip download requests --no-deps -d /tmp/nx-upload/
 
 # Push to Nexus
 twine upload \
-  --repository-url http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/pypi-hosted/ \
+  --repository-url https://nexus.example.com/repository/pypi-hosted/ \
   -u admin -p 'YOUR_PASSWORD' \
   /tmp/nx-upload/*
 rm -rf /tmp/nx-upload
@@ -436,7 +397,7 @@ Or build and publish your own package:
 ```bash
 python -m build
 twine upload \
-  --repository-url http://nexus-oss-zlnu5d.uksouth.azurecontainer.io/repository/pypi-hosted/ \
+  --repository-url https://nexus.example.com/repository/pypi-hosted/ \
   -u YOUR_USER -p YOUR_PASSWORD \
   dist/*
 ```
@@ -449,7 +410,7 @@ Use the **web UI**: log in → **Browse → r-hosted → Upload component**, the
 
 ## Creating user accounts
 
-1. Log in to http://nexus-oss-zlnu5d.uksouth.azurecontainer.io as `admin`.
+1. Log in to https://nexus.example.com as `admin`.
 2. **Administration → Security → Users → Create local user**.
 3. Assign roles as appropriate:
 

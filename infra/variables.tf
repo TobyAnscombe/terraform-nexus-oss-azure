@@ -72,112 +72,40 @@ variable "nexus_data_share_quota_gb" {
 }
 
 # ---------------------------------------------------------------------------
-# Networking
+# Networking — VNet (always private; no public IP)
 # ---------------------------------------------------------------------------
-
-variable "dns_name_label_prefix" {
-  description = "Prefix for the container group's public DNS label. Full FQDN: <prefix>-<random>.<region>.azurecontainer.io"
-  type        = string
-  default     = "nexus-oss"
-}
-
-# ---------------------------------------------------------------------------
-# VNet / private deployment
-# ---------------------------------------------------------------------------
-
-variable "existing_subnet_id" {
-  description = <<-EOF
-    Full Azure resource ID of an existing subnet to deploy the ACI container into.
-    Use this to attach Nexus to an existing hub-and-spoke or spoke VNet rather than
-    creating a dedicated VNet.
-
-    When set:
-      - The managed VNet, subnet, and NSG created by this module are NOT provisioned.
-      - ACI receives a private IP from the provided subnet (vnet_integrated mode
-        is implied — no public IP or DNS label is assigned).
-      - You are responsible for NSG rules on the subnet: port 80 must be open
-        from any source that needs to reach Nexus (pip clients, CI runners, etc.).
-      - The subnet must already be delegated to
-        Microsoft.ContainerInstance/containerGroups.
-      - terraform apply must be run from a host that can reach the private IP
-        (e.g. a machine on the VPN / in the VNet).
-      - The storage-account network firewall (restrict_to_vnet) is NOT applied
-        automatically because this module does not manage the existing subnet's
-        service endpoints. Add Microsoft.Storage to the subnet's service_endpoints
-        manually and set restrict_storage_to_vnet = true to enable it.
-
-    Example:
-      /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-hub/providers/Microsoft.Network/virtualNetworks/vnet-hub/subnets/snet-nexus
-  EOF
-  type        = string
-  default     = null
-}
-
-variable "vnet_integrated" {
-  description = <<-EOF
-    When false (default): ACI uses a public IP and DNS label — suitable for
-    internet-accessible deployments.
-
-    When true: ACI is deployed into the managed snet-aci subnet and receives a
-    private IP only. The public IP and DNS label are removed. Requires:
-      - A VPN Gateway or ExpressRoute peered to this VNet, OR a jumpbox in
-        the VNet, so that terraform apply can reach the Nexus bootstrap API.
-      - Update nsg_inbound_source to restrict access to your corporate CIDR.
-
-    Ignored when existing_subnet_id is set (existing subnet implies VNet mode).
-    Changing this value forces replacement of the container group.
-  EOF
-  type        = bool
-  default     = false
-}
 
 variable "vnet_address_space" {
-  description = "Address space for the managed Virtual Network. Ignored when existing_subnet_id is set."
+  description = "Address space for the managed Virtual Network."
   type        = string
   default     = "10.100.0.0/16"
 }
 
 variable "aci_subnet_prefix" {
-  description = "Address prefix for the managed ACI subnet within the VNet. Ignored when existing_subnet_id is set."
+  description = "Address prefix for the ACI subnet within the VNet."
   type        = string
   default     = "10.100.1.0/24"
 }
 
-variable "restrict_storage_to_vnet" {
+# ---------------------------------------------------------------------------
+# Cloudflare Tunnel
+# ---------------------------------------------------------------------------
+
+variable "cloudflare_tunnel_token" {
   description = <<-EOF
-    Enable the storage account network firewall when using an existing subnet
-    (existing_subnet_id is set). When true, only traffic from the subnet is
-    allowed to reach the Azure Files share.
-
-    Requires: Microsoft.Storage service endpoint must already be configured on
-    the existing subnet before running terraform apply.
-
-    Ignored when existing_subnet_id is null — the firewall is controlled by
-    vnet_integrated in that case.
-  EOF
-  type        = bool
-  default     = false
-}
-
-variable "nsg_inbound_source" {
-  description = <<-EOF
-    Source address prefix for the NSG inbound rule on port 80.
-    Only applies to the managed NSG (i.e. when existing_subnet_id is NOT set).
-    Default "*" = open to the internet (fine for public deployments).
-    When going private, set to your corporate/VPN CIDR, e.g. "10.0.0.0/8".
+    Cloudflare Tunnel token from Zero Trust dashboard (Networks → Tunnels).
+    Create the tunnel first, then configure a Public Hostname ingress rule:
+      <cloudflare_tunnel_hostname> → http://localhost:8081
+    Paste the generated token here. Sensitive — never commit to source control.
   EOF
   type        = string
-  default     = "*"
+  sensitive   = true
 }
 
-variable "allowed_cidrs" {
+variable "cloudflare_tunnel_hostname" {
   description = <<-EOF
-    Optional list of CIDR blocks permitted to reach Nexus through nginx.
-    Applies on top of whichever networking option (A/B/C) is active.
-    When non-empty, nginx allows listed CIDRs and returns 403 to all others.
-    Leave empty (default) to allow all traffic — rely on NSG / VNet instead.
-    Changing this value forces replacement of the ACI container group.
+    Public hostname configured in Cloudflare for this tunnel (e.g. nexus.example.com).
+    Used as the nexus_base_url output that Phase 2 reads via remote state.
   EOF
-  type        = list(string)
-  default     = []
+  type        = string
 }

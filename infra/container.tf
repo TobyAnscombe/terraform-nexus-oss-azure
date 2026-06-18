@@ -1,18 +1,13 @@
 ###############################################################################
-# Azure Container Group — Nexus OSS + nginx reverse proxy sidecar
+# Azure Container Group — Nexus OSS + cloudflared tunnel sidecar
 #
 # Two containers share localhost in the same ACI group:
-#   nexus — sonatype/nexus3, listens on 8081 (internal only, not exposed)
-#   nginx — nginx:1.27-alpine, listens on 80, proxies all traffic to localhost:8081
+#   nexus       — sonatype/nexus3, listens on 8081 (internal only)
+#   cloudflared — cloudflare/cloudflared, connects outbound to Cloudflare's
+#                 network and proxies traffic to localhost:8081
 #
-# Port 80 is the only externally exposed port. nginx writes its config inline
-# via the commands override so no external config file or custom image is needed.
-#
-# ip_address_type and subnet_ids are conditional on var.vnet_integrated:
-#   false (default) → Public IP + DNS label, no VNet attachment
-#   true            → Private IP in snet-aci, no public DNS
-#
-# Changing vnet_integrated forces replacement of the container group.
+# No ports are exposed externally. ACI is always deployed with a private IP
+# in the managed VNet. Public access is via the Cloudflare Tunnel only.
 ###############################################################################
 
 resource "azurerm_container_group" "nexus" {
@@ -21,14 +16,13 @@ resource "azurerm_container_group" "nexus" {
   location            = azurerm_resource_group.main.location
 
   os_type         = "Linux"
-  ip_address_type = local.use_vnet ? "Private" : "Public"
-  dns_name_label  = local.use_vnet ? null : local.dns_name_label
-  subnet_ids      = local.use_vnet ? [local.aci_subnet_id] : null
+  ip_address_type = "Private"
+  subnet_ids      = [azurerm_subnet.aci.id]
 
   restart_policy = "Always"
 
   # ---------------------------------------------------------------------------
-  # Nexus OSS — internal on port 8081, not exposed externally
+  # Nexus OSS — internal on port 8081
   # ---------------------------------------------------------------------------
   container {
     name   = "nexus"
@@ -45,6 +39,12 @@ resource "azurerm_container_group" "nexus" {
       INSTALL4J_ADD_VM_PARAMS = local.nexus_jvm_opts
     }
 
+    # Container-level port declaration for liveness probe — not exposed externally.
+    ports {
+      port     = 8081
+      protocol = "TCP"
+    }
+
     # /nexus-data: blob store, component DB, config, logs — persists across restarts
     volume {
       name                 = "nexus-data"
@@ -55,13 +55,10 @@ resource "azurerm_container_group" "nexus" {
       share_name           = azurerm_storage_share.nexus_data.name
     }
 
-    # Probe via nginx (port 80) rather than directly to Nexus (8081) so that:
-    # - no port 8081 declaration is needed on this container (avoids external exposure)
-    # - probe tests the full proxy chain; a failed nginx config also triggers a restart
     liveness_probe {
       http_get {
         path   = "/service/rest/v1/status"
-        port   = 80
+        port   = 8081
         scheme = "Http"
       }
       initial_delay_seconds = 90
@@ -73,58 +70,47 @@ resource "azurerm_container_group" "nexus" {
   }
 
   # ---------------------------------------------------------------------------
-  # nginx sidecar — proxies port 80 → localhost:8081
-  # Config is written inline; containers share localhost so no network config needed.
-  # client_max_body_size 0 allows arbitrarily large package uploads.
-  # proxy_buffering off avoids buffering large package downloads in nginx memory.
+  # cloudflared — Cloudflare Tunnel sidecar
+  #
+  # Connects outbound to Cloudflare's network using the tunnel token.
+  # Routes all inbound tunnel traffic to localhost:8081 (Nexus), as configured
+  # in the Cloudflare Zero Trust dashboard ingress rules.
+  #
+  # --no-autoupdate: prevents self-update attempts in a container environment.
+  # TUNNEL_TOKEN:    read automatically by cloudflared when running 'tunnel run'.
   # ---------------------------------------------------------------------------
   container {
-    name   = "nginx"
-    image  = "nginx:1.27-alpine"
-    cpu    = 0.1
+    name   = "cloudflared"
+    image  = "cloudflare/cloudflared:latest"
+    cpu    = 0.25
     memory = 0.5
 
+    secure_environment_variables = {
+      TUNNEL_TOKEN = var.cloudflare_tunnel_token
+    }
+
+    commands = ["cloudflared", "tunnel", "--no-autoupdate", "run"]
+
+    # Management API on localhost:2999 — /ready returns 200 when tunnel is up.
     ports {
-      port     = 80
+      port     = 2999
       protocol = "TCP"
     }
 
-    # proxy_buffering off        — don't buffer responses (downloads) in nginx memory
-    # proxy_request_buffering off — don't buffer request bodies (uploads) before forwarding;
-    #                               prevents OOM on large package uploads (wheels, R tarballs)
-    commands = [
-      "/bin/sh", "-c",
-      "echo 'server{listen 80;client_max_body_size 0;${local.nginx_ip_filter}location /{proxy_pass http://localhost:8081;proxy_set_header Host $host;proxy_set_header X-Real-IP $remote_addr;proxy_read_timeout 300;proxy_send_timeout 300;proxy_buffering off;proxy_request_buffering off;}}' > /etc/nginx/conf.d/default.conf && exec nginx -g 'daemon off;'",
-    ]
-
     liveness_probe {
       http_get {
-        path   = "/service/rest/v1/status"
-        port   = 80
+        path   = "/ready"
+        port   = 2999
         scheme = "Http"
       }
       initial_delay_seconds = 10
       period_seconds        = 30
       failure_threshold     = 5
-      success_threshold     = 1
-      timeout_seconds       = 10
+      timeout_seconds       = 5
     }
   }
 
   tags = local.common_tags
-
-  lifecycle {
-    precondition {
-      condition = var.existing_subnet_id == null || try(
-        anytrue([
-          for d in data.azurerm_subnet.existing[0].delegation :
-          anytrue([for sd in d.service_delegation : sd.name == "Microsoft.ContainerInstance/containerGroups"])
-        ]),
-        false
-      )
-      error_message = "The subnet '${coalesce(var.existing_subnet_id, "n/a")}' must be delegated to Microsoft.ContainerInstance/containerGroups. Run: az network vnet subnet update --ids '${coalesce(var.existing_subnet_id, "n/a")}' --delegations Microsoft.ContainerInstance/containerGroups"
-    }
-  }
 }
 
 # Gate the nexus_base_url output until Nexus has had time to initialise its

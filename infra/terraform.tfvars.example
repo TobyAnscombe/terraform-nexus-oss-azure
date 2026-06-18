@@ -17,28 +17,17 @@ nexus_memory_gb = 4
 storage_replication_type  = "LRS"
 nexus_data_share_quota_gb = 100
 
-# ── Networking ────────────────────────────────────────────────────────────────
-dns_name_label_prefix = "nexus-oss"
+# ── VNet ──────────────────────────────────────────────────────────────────────
+# ACI is always deployed with a private IP — no public IP or DNS label.
+vnet_address_space = "10.100.0.0/16"
+aci_subnet_prefix  = "10.100.1.0/24"
 
-# Option A — Public (default): internet-accessible, Azure-assigned DNS label
-vnet_integrated    = false
-nsg_inbound_source = "*"
-
-# Option B — Managed private VNet: ACI deployed into a new VNet + subnet
-# vnet_integrated    = true
-# nsg_inbound_source = "10.0.0.0/8"  # your corporate / VPN CIDR
-
-# Option C — Existing subnet: attach to a subnet in an existing VNet/hub
-# The subnet must already be delegated to Microsoft.ContainerInstance/containerGroups.
-# vnet_integrated and nsg_inbound_source are ignored when existing_subnet_id is set.
-# existing_subnet_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-hub/providers/Microsoft.Network/virtualNetworks/vnet-hub/subnets/snet-nexus"
-
-# ── nginx IP access ───────────────────────────────────────────────────────────
-# Optional: restrict Nexus to specific CIDRs at the nginx layer.
-# Applies on top of whichever networking option (A/B/C) is active.
-# Leave empty to allow all traffic (rely on NSG / VNet for restriction instead).
-# allowed_cidrs = ["10.0.0.0/8", "172.16.0.0/12", "203.0.113.45/32"]
-allowed_cidrs = []
+# ── Cloudflare Tunnel ─────────────────────────────────────────────────────────
+# 1. In Zero Trust dashboard → Networks → Tunnels → Create a tunnel (Cloudflared).
+# 2. Under Public Hostnames, add:  <hostname>  →  http://localhost:8081
+# 3. Copy the tunnel token and paste it below (sensitive — never commit).
+cloudflare_tunnel_token    = "eyJ..."
+cloudflare_tunnel_hostname = "nexus.example.com"
 
 # ── Optional tags ─────────────────────────────────────────────────────────────
 tags = {

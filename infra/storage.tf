@@ -23,23 +23,11 @@ resource "azurerm_storage_account" "main" {
     }
   }
 
-  # Network firewall: restrict storage to the ACI subnet.
-  # Enabled in two cases:
-  #   1. Managed VNet mode (vnet_integrated = true, existing_subnet_id = null) —
-  #      the managed subnet has Microsoft.Storage service endpoint (network.tf).
-  #   2. Existing subnet mode (existing_subnet_id set, restrict_storage_to_vnet = true) —
-  #      caller must add Microsoft.Storage to the existing subnet's service_endpoints
-  #      before applying, otherwise the firewall will lock ACI out of storage.
-  dynamic "network_rules" {
-    for_each = (
-      (var.vnet_integrated && var.existing_subnet_id == null) ||
-      (var.existing_subnet_id != null && var.restrict_storage_to_vnet)
-    ) ? [1] : []
-    content {
-      default_action             = "Deny"
-      virtual_network_subnet_ids = [local.aci_subnet_id]
-      bypass                     = ["AzureServices"]
-    }
+  # Always restrict storage to the ACI subnet — ACI is always VNet-integrated.
+  network_rules {
+    default_action             = "Deny"
+    virtual_network_subnet_ids = [azurerm_subnet.aci.id]
+    bypass                     = ["AzureServices"]
   }
 
   tags = local.common_tags

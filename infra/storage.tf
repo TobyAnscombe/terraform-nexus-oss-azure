@@ -1,3 +1,10 @@
+# Discover the public IP of the machine running terraform so it can be added
+# to the storage account firewall. Without this, creating the file share fails
+# with 403 because the deny-all network rule blocks Terraform's data-plane calls.
+data "http" "runner_ip" {
+  url = "https://api.ipify.org"
+}
+
 ###############################################################################
 # Storage Account + single File Share for all Nexus data
 ###############################################################################
@@ -23,10 +30,13 @@ resource "azurerm_storage_account" "main" {
     }
   }
 
-  # Always restrict storage to the ACI subnet — ACI is always VNet-integrated.
+  # Deny all by default; allow only:
+  #   1. ACI subnet (via service endpoint) — for Nexus to read/write /nexus-data
+  #   2. Runner's public IP              — so Terraform can create the file share
   network_rules {
     default_action             = "Deny"
     virtual_network_subnet_ids = [azurerm_subnet.aci.id]
+    ip_rules                   = [chomp(data.http.runner_ip.response_body)]
     bypass                     = ["AzureServices"]
   }
 

@@ -82,6 +82,8 @@ No ports are exposed on Azure. cloudflared connects **outbound** to Cloudflare's
 | Azure CLI | `brew install azure-cli` | `winget install Microsoft.AzureCLI` |
 | PowerShell | built-in | built-in (Windows 11) |
 
+> **Terraform without a global install:** If you cannot add Terraform to your PATH, place `terraform.exe` at the root of this repository. Scripts will find it there automatically.
+
 ---
 
 ## Deployment
@@ -213,13 +215,19 @@ terraform apply
 
 **macOS / Linux**
 ```bash
-bash scripts/smoke-test.sh https://<your-cloudflare-hostname>
-bash scripts/smoke-test-phase2.sh https://<your-cloudflare-hostname> <admin-password>
+bash scripts/smoke-test.sh
+bash scripts/smoke-test-phase2.sh '' <admin-password>
 ```
 
 **Windows (PowerShell)**
 ```powershell
-.\scripts\smoke-test.ps1 -NexusUrl https://<your-cloudflare-hostname>
+.\scripts\smoke-test.ps1
+.\scripts\smoke-test-phase2.ps1 -AdminPassword <admin-password>
+```
+
+The URL is read automatically from `infra/terraform.tfvars` (`cloudflare_tunnel_hostname`). Pass it explicitly if needed:
+
+```powershell
 .\scripts\smoke-test-phase2.ps1 -NexusUrl https://<your-cloudflare-hostname> -AdminPassword <admin-password>
 ```
 

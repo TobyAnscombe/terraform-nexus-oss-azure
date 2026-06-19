@@ -24,45 +24,50 @@ function Get-AuthHeaders([string] $CurrentPassword) {
   return @{ Authorization = "Basic $cred" }
 }
 
+function Invoke-NexusRequest([string] $Uri, [string] $Method, [hashtable] $Headers, [string] $Body) {
+  try {
+    Invoke-WebRequest -Uri $Uri -Method $Method -Headers $Headers -Body $Body `
+      -UseBasicParsing -ErrorAction Stop | Out-Null
+  } catch {
+    # Extract HTTP status code if available; fall back to raw exception message.
+    $status = $null
+    try { $status = $_.Exception.Response.StatusCode.value__ } catch {}
+    if ($status) { throw "HTTP $status" } else { throw $_.Exception.Message }
+  }
+}
+
 function Invoke-EulaAccept([string] $CurrentPassword) {
   $headers = Get-AuthHeaders -CurrentPassword $CurrentPassword
   $headers['Content-Type'] = 'application/json'
-  # Invoke-WebRequest rather than Invoke-RestMethod: PS 5.1 (Windows built-in)
-  # throws on 204 No Content when using Invoke-RestMethod because it tries to
-  # parse an empty body. Invoke-WebRequest + -UseBasicParsing handles 204 correctly
-  # on PS 5.1 and PS 7+.
-  Invoke-WebRequest -Uri "$base/service/rest/v1/system/eula" -Method PUT `
-    -Headers $headers -Body '{"accepted":true}' -UseBasicParsing -ErrorAction Stop | Out-Null
+  Invoke-NexusRequest -Uri "$base/service/rest/v1/system/eula" -Method PUT `
+    -Headers $headers -Body '{"accepted":true}'
 }
 
 function Invoke-PasswordChange([string] $CurrentPassword) {
   $headers = Get-AuthHeaders -CurrentPassword $CurrentPassword
   $headers['Content-Type'] = 'text/plain'
-  Invoke-WebRequest -Uri "$base/service/rest/v1/security/users/admin/change-password" `
-    -Method PUT -Headers $headers -Body $NewPassword -UseBasicParsing -ErrorAction Stop | Out-Null
+  Invoke-NexusRequest -Uri "$base/service/rest/v1/security/users/admin/change-password" `
+    -Method PUT -Headers $headers -Body $NewPassword
 }
 
 # Step 1 — accept EULA (Nexus CE blocks all repository access until accepted).
-try {
-  Invoke-EulaAccept -CurrentPassword 'admin123'
-} catch {
-  try {
-    Invoke-EulaAccept -CurrentPassword $NewPassword
-  } catch {
-    throw "Failed to accept EULA. Verify NEXUS_URL is reachable."
-  }
+$eulaErr1 = $null; $eulaErr2 = $null
+try { Invoke-EulaAccept -CurrentPassword 'admin123'   } catch { $eulaErr1 = $_.Exception.Message }
+if ($eulaErr1) {
+  try { Invoke-EulaAccept -CurrentPassword $NewPassword } catch { $eulaErr2 = $_.Exception.Message }
+}
+if ($eulaErr1 -and $eulaErr2) {
+  throw "Failed to accept EULA at $base — admin123: $eulaErr1 | new_password: $eulaErr2"
 }
 Write-Host 'EULA accepted.'
 
 # Step 2 — change admin password.
-try {
-  Invoke-PasswordChange -CurrentPassword 'admin123'
-  Write-Host 'Nexus admin password set.'
-} catch {
-  try {
-    Invoke-PasswordChange -CurrentPassword $NewPassword
-    Write-Host 'Nexus admin password confirmed (already set).'
-  } catch {
-    throw "Failed to set Nexus admin password. Verify NEXUS_URL is reachable and credentials are correct."
-  }
+$pwErr1 = $null; $pwErr2 = $null
+try { Invoke-PasswordChange -CurrentPassword 'admin123'   } catch { $pwErr1 = $_.Exception.Message }
+if ($pwErr1) {
+  try { Invoke-PasswordChange -CurrentPassword $NewPassword } catch { $pwErr2 = $_.Exception.Message }
 }
+if ($pwErr1 -and $pwErr2) {
+  throw "Failed to set admin password at $base — admin123: $pwErr1 | new_password: $pwErr2"
+}
+if ($pwErr1) { Write-Host 'Nexus admin password confirmed (already set).' } else { Write-Host 'Nexus admin password set.' }

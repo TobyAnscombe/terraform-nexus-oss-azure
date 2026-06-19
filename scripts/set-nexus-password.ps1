@@ -23,10 +23,16 @@ if (-not $NewPassword) { throw 'NEW_PASSWORD is required' }
 $base = $NexusUrl.TrimEnd('/')
 
 function Invoke-NexusCurl([string]$Auth, [string]$Uri, [string]$ContentType, [string]$Body) {
-  $out = & curl.exe -sf -u $Auth -X PUT -H "Content-Type: $ContentType" -d $Body $Uri 2>&1
+  # -o NUL discards the body; -w prints only the HTTP status code to stdout.
+  # Avoids -f so we capture the status rather than just getting exit 22.
+  $status = & curl.exe -s -u $Auth -X PUT -H "Content-Type: $ContentType" -d $Body `
+    -o NUL -w '%{http_code}' $Uri 2>&1
   if ($LASTEXITCODE -ne 0) {
-    $detail = if ($out) { ': ' + ($out -join ' ') } else { '' }
-    throw "curl exit $LASTEXITCODE$detail"
+    throw "curl connection error (exit $LASTEXITCODE)"
+  }
+  $code = [int]($status -join '')
+  if ($code -lt 200 -or $code -ge 300) {
+    throw "HTTP $code"
   }
 }
 

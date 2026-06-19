@@ -216,6 +216,32 @@ terraform apply
 
 Phase 2 reads the Nexus URL from Phase 1's remote state and changes the admin password from the Nexus default (`admin123`) to the value set in `admin_password`. Run Phase 1 fully before Phase 2.
 
+### Password bootstrap script
+
+`scripts/set-nexus-password.sh` (and `.ps1` for Windows) is called automatically by `terraform apply nexus/` via the `null_resource.set_admin_password` resource. You can also run it manually — for example to reset the password after a container restart, or to bootstrap before Phase 2 if Bot Fight Mode is blocking `terraform apply`.
+
+The script is idempotent: it tries `admin123` first (fresh instance), then falls back to `NEW_PASSWORD` (already bootstrapped). It also accepts the Nexus CE EULA as its first step, which is required before any repository content is accessible.
+
+**macOS / Linux**
+```bash
+NEXUS_URL=https://nexus.example.com \
+NEW_PASSWORD=<your-admin-password> \
+bash scripts/set-nexus-password.sh
+```
+
+**Windows (PowerShell)**
+```powershell
+$env:NEXUS_URL    = "https://nexus.example.com"
+$env:NEW_PASSWORD = "<your-admin-password>"
+.\scripts\set-nexus-password.ps1
+```
+
+Or using named parameters:
+```powershell
+.\scripts\set-nexus-password.ps1 `
+  -NexusUrl   "https://nexus.example.com" `
+  -NewPassword "<your-admin-password>"
+```
 
 ---
 

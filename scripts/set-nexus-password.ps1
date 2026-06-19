@@ -17,6 +17,9 @@ param(
 if (-not $NexusUrl)    { throw 'NEXUS_URL is required' }
 if (-not $NewPassword) { throw 'NEW_PASSWORD is required' }
 
+# PS 5.1 (.NET Framework) defaults to TLS 1.0/1.1; Cloudflare requires TLS 1.2+.
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 $base = $NexusUrl.TrimEnd('/')
 
 function Get-AuthHeaders([string] $CurrentPassword) {

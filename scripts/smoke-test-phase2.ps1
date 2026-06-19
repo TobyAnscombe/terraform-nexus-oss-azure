@@ -21,13 +21,27 @@ Set-StrictMode -Version Latest
 
 # -- Resolve URL --------------------------------------------------------------
 if (-not $NexusUrl) {
-    $infraDir = Join-Path (Join-Path $PSScriptRoot '..') 'infra'
-    Push-Location $infraDir
-    try   { $NexusUrl = (terraform output -raw nexus_url 2>$null).Trim() }
-    finally { Pop-Location }
+    $root     = Join-Path $PSScriptRoot '..'
+    $infraDir = Join-Path $root 'infra'
+    $tfExe    = if (Get-Command terraform -ErrorAction SilentlyContinue) { 'terraform' }
+                elseif (Test-Path (Join-Path $root 'terraform.exe'))     { Join-Path $root 'terraform.exe' }
+                else                                                      { $null }
+    if ($tfExe) {
+        Push-Location $infraDir
+        try   { $NexusUrl = (& $tfExe output -raw nexus_url 2>$null).Trim() }
+        catch { $NexusUrl = '' }
+        finally { Pop-Location }
+    }
 }
 if (-not $NexusUrl) {
-    Write-Error 'Nexus URL not found. Pass -NexusUrl or run infra/ apply first.'
+    $tfvars = Join-Path (Join-Path $PSScriptRoot '..') 'infra\terraform.tfvars'
+    if (Test-Path $tfvars) {
+        $line = (Get-Content $tfvars | Select-String 'cloudflare_tunnel_hostname').Line
+        if ($line -match '=\s*"([^"]+)"') { $NexusUrl = "https://$($Matches[1])" }
+    }
+}
+if (-not $NexusUrl) {
+    Write-Error 'Nexus URL not found. Pass -NexusUrl or ensure cloudflare_tunnel_hostname is set in infra/terraform.tfvars.'
     exit 1
 }
 $NexusUrl = $NexusUrl.TrimEnd('/')

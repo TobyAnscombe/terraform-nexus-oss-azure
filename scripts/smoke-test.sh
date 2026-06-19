@@ -14,10 +14,25 @@ NEXUS_URL="${1:-}"
 
 # ── Resolve URL ──────────────────────────────────────────────────────────────
 if [[ -z "$NEXUS_URL" ]]; then
-  NEXUS_URL=$(cd "$(dirname "$0")/../infra" && terraform output -raw nexus_url 2>/dev/null || true)
+  _root="$(cd "$(dirname "$0")/.." && pwd)"
+  if   command -v terraform &>/dev/null;       then _tf=terraform
+  elif [[ -x "$_root/terraform" ]];            then _tf="$_root/terraform"
+  elif [[ -x "$_root/terraform.exe" ]];        then _tf="$_root/terraform.exe"
+  else                                              _tf=""
+  fi
+  if [[ -n "$_tf" ]]; then
+    NEXUS_URL=$(cd "$_root/infra" && "$_tf" output -raw nexus_url 2>/dev/null || true)
+  fi
 fi
 if [[ -z "$NEXUS_URL" ]]; then
-  echo "ERROR: Nexus URL not found. Pass it as first argument or run infra/ apply first." >&2
+  TFVARS="$(dirname "$0")/../infra/terraform.tfvars"
+  if [[ -f "$TFVARS" ]]; then
+    _host=$(grep -E '^cloudflare_tunnel_hostname\s*=' "$TFVARS" | sed 's/.*=\s*"\(.*\)".*/\1/')
+    [[ -n "$_host" ]] && NEXUS_URL="https://$_host"
+  fi
+fi
+if [[ -z "$NEXUS_URL" ]]; then
+  echo "ERROR: Nexus URL not found. Pass it as first argument or ensure cloudflare_tunnel_hostname is set in infra/terraform.tfvars." >&2
   exit 1
 fi
 NEXUS_URL="${NEXUS_URL%/}"

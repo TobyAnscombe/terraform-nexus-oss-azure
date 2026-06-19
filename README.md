@@ -171,21 +171,9 @@ terraform apply
 
 ### Bot Fight Mode note
 
-Cloudflare's **Bot Fight Mode** (on by default) blocks programmatic HTTP clients — including the `datadrivers/nexus` Terraform provider and the password bootstrap `curl`. If `terraform apply nexus/` or `scripts/set-nexus-password.sh` fail with connection errors, exec into the container and run the bootstrap against `localhost:8081` directly, bypassing Cloudflare:
+Cloudflare's **Bot Fight Mode** blocks programmatic HTTP clients from corporate networks (SSL-inspecting proxies alter the TLS fingerprint, causing Cloudflare to flag the request as a bot). The `datadrivers/nexus` provider connects to Nexus through the Cloudflare Tunnel — but the password **bootstrap** scripts (`set-nexus-password.sh/ps1`) now bypass this entirely by uploading a temp script to Azure Files and running it inside the container via `az container exec`, which goes through Azure ARM APIs rather than Cloudflare.
 
-```bash
-# Change the password from inside the container (bypasses Cloudflare entirely)
-az container exec \
-  --resource-group rg-nexus-oss \
-  --name aci-prod-nexus-oss \
-  --container-name nexus \
-  --exec-command "bash"
-# then inside the container:
-curl -sf -u admin:admin123 -X PUT http://localhost:8081/service/rest/v1/system/eula \
-  -H 'Content-Type: application/json' -d '{"accepted":true}'
-curl -sf -u admin:admin123 -X PUT http://localhost:8081/service/rest/v1/security/users/admin/change-password \
-  -H 'Content-Type: text/plain' -d 'YOUR_NEW_PASSWORD'
-```
+**No action needed** — `terraform apply nexus/` handles this automatically via the `null_resource.set_admin_password` resource.
 
 ### Phase 2 — Nexus configuration
 
@@ -218,29 +206,39 @@ Phase 2 reads the Nexus URL from Phase 1's remote state and changes the admin pa
 
 ### Password bootstrap script
 
-`scripts/set-nexus-password.sh` (and `.ps1` for Windows) is called automatically by `terraform apply nexus/` via the `null_resource.set_admin_password` resource. You can also run it manually — for example to reset the password after a container restart, or to bootstrap before Phase 2 if Bot Fight Mode is blocking `terraform apply`.
+`scripts/set-nexus-password.sh` (and `.ps1` for Windows) is called automatically by `terraform apply nexus/` via the `null_resource.set_admin_password` resource. You can also run it manually — for example to reset the password after a container restart.
 
-The script is idempotent: it tries `admin123` first (fresh instance), then falls back to `NEW_PASSWORD` (already bootstrapped). It also accepts the Nexus CE EULA as its first step, which is required before any repository content is accessible.
+The script uploads a temporary bash script to the Nexus Azure Files share and executes it inside the container via `az container exec`, running `curl` against `localhost:8081`. This bypasses Cloudflare entirely — no tunnel involved. The temp file is deleted immediately after the bootstrap completes.
+
+The bootstrap is idempotent: it tries `admin123` first (fresh instance), then falls back to `NEW_PASSWORD` (already bootstrapped). It also accepts the Nexus CE EULA as its first step, which is required before any repository content is accessible.
+
+**Requires**: Azure CLI (`az login`) with at least Contributor access to the resource group.
 
 **macOS / Linux**
 ```bash
-NEXUS_URL=https://nexus.example.com \
 NEW_PASSWORD=<your-admin-password> \
+RESOURCE_GROUP=rg-nexus-oss \
+CONTAINER_GROUP=aci-prod-nexus-oss \
+STORAGE_ACCOUNT=<storage-account-name> \
 bash scripts/set-nexus-password.sh
 ```
 
 **Windows (PowerShell)**
 ```powershell
-$env:NEXUS_URL    = "https://nexus.example.com"
-$env:NEW_PASSWORD = "<your-admin-password>"
+$env:NEW_PASSWORD    = "<your-admin-password>"
+$env:RESOURCE_GROUP  = "rg-nexus-oss"
+$env:CONTAINER_GROUP = "aci-prod-nexus-oss"
+$env:STORAGE_ACCOUNT = "<storage-account-name>"
 .\scripts\set-nexus-password.ps1
 ```
 
 Or using named parameters:
 ```powershell
 .\scripts\set-nexus-password.ps1 `
-  -NexusUrl   "https://nexus.example.com" `
-  -NewPassword "<your-admin-password>"
+  -NewPassword    "<your-admin-password>" `
+  -ResourceGroup  "rg-nexus-oss" `
+  -ContainerGroup "aci-prod-nexus-oss" `
+  -StorageAccount "<storage-account-name>"
 ```
 
 ---
@@ -531,14 +529,20 @@ To reset or re-set the password manually (e.g. after a container restart resets 
 
 **macOS / Linux**
 ```bash
-NEXUS_URL=https://nexus.example.com \
 NEW_PASSWORD=<your-admin-password> \
+RESOURCE_GROUP=rg-nexus-oss \
+CONTAINER_GROUP=aci-prod-nexus-oss \
+STORAGE_ACCOUNT=<storage-account-name> \
 bash scripts/set-nexus-password.sh
 ```
 
 **Windows (PowerShell)**
 ```powershell
-.\scripts\set-nexus-password.ps1 -NexusUrl https://nexus.example.com -NewPassword <your-admin-password>
+.\scripts\set-nexus-password.ps1 `
+  -NewPassword    "<your-admin-password>" `
+  -ResourceGroup  "rg-nexus-oss" `
+  -ContainerGroup "aci-prod-nexus-oss" `
+  -StorageAccount "<storage-account-name>"
 ```
 
 If Phase 2 fails to authenticate, confirm `admin_password` in `nexus/terraform.tfvars` and re-run. If the state is unknown, exec into the container:
@@ -725,7 +729,7 @@ az group delete --name rg-nexus-tf-state
 ├── scripts/
 │   ├── create-backend.sh          Bash: provision remote state storage + write backend.hcl
 │   ├── create-backend.ps1         PowerShell: same as above for Windows
-│   ├── set-nexus-password.sh      Bash: accept EULA + change admin password via REST API
+│   ├── set-nexus-password.sh      Bash: accept EULA + change admin password via az container exec
 │   ├── set-nexus-password.ps1     PowerShell: same as above for Windows
 │   ├── smoke-test.sh              Bash: Phase 1+2 smoke test (PyPI, CRAN)
 │   ├── smoke-test.ps1             PowerShell: same as above for Windows

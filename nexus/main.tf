@@ -10,7 +10,9 @@
 ###############################################################################
 
 locals {
-  nexus_url = data.terraform_remote_state.infra.outputs.nexus_base_url
+  nexus_url            = data.terraform_remote_state.infra.outputs.nexus_base_url
+  container_group_name = data.terraform_remote_state.infra.outputs.container_group_name
+  storage_account_name = data.terraform_remote_state.infra.outputs.storage_account_name
 
   # Flatten all PyPI packages into a single list for the routing rule.
   all_pypi_packages = flatten(values(var.pypi_allowlist))
@@ -40,17 +42,20 @@ locals {
 
 resource "null_resource" "set_admin_password" {
   triggers = {
-    password_hash = sha256(var.admin_password)
-    nexus_url     = local.nexus_url
+    password_hash   = sha256(var.admin_password)
+    container_group = local.container_group_name
   }
 
-  # Platform-adaptive: PowerShell on Windows, bash on macOS/Linux.
-  # Credentials are passed via environment to keep them out of process argv and Terraform debug logs.
+  # Bootstrap runs via az container exec against localhost:8081 inside the ACI
+  # container — traffic goes through Azure ARM APIs, not Cloudflare, so it works
+  # from any machine that has az CLI access regardless of network restrictions.
   provisioner "local-exec" {
     interpreter = local.is_windows ? ["PowerShell", "-File"] : ["bash"]
     environment = {
-      NEXUS_URL    = local.nexus_url
-      NEW_PASSWORD = var.admin_password
+      NEW_PASSWORD    = var.admin_password
+      RESOURCE_GROUP  = data.terraform_remote_state.infra.outputs.resource_group_name
+      CONTAINER_GROUP = local.container_group_name
+      STORAGE_ACCOUNT = local.storage_account_name
     }
     command = local.is_windows ? local.pw_script_ps : local.pw_script_sh
   }

@@ -1,55 +1,81 @@
 #!/usr/bin/env bash
-# Bootstrap a fresh Nexus OSS instance:
-#   1. Accept the EULA (required since Nexus CE; idempotent).
-#   2. Change the admin password from the default (admin123) to NEW_PASSWORD.
+# Bootstrap Nexus OSS via az container exec — bypasses Cloudflare entirely.
 #
-# Both steps are idempotent — safe to re-run at any time.
+# Writes a temporary bash script to the Nexus Azure Files share (/nexus-data),
+# runs it inside the container against localhost:8081, then deletes it.
+# Using Azure ARM APIs means corporate network proxies and Cloudflare Bot Fight
+# Mode do not interfere.
 #
 # Required env vars:
-#   NEXUS_URL      Base URL, e.g. https://nexus.example.com
-#   NEW_PASSWORD   Target admin password
-#
-# Optional env vars (Cloudflare Access service token):
-#   CF_ACCESS_CLIENT_ID
-#   CF_ACCESS_CLIENT_SECRET
+#   NEW_PASSWORD    Target admin password
+#   RESOURCE_GROUP  Azure resource group name
+#   CONTAINER_GROUP Azure Container Instance group name
+#   STORAGE_ACCOUNT Azure Storage account name (for the nexus-data file share)
 set -euo pipefail
 
-: "${NEXUS_URL:?NEXUS_URL is required}"
 : "${NEW_PASSWORD:?NEW_PASSWORD is required}"
+: "${RESOURCE_GROUP:?RESOURCE_GROUP is required}"
+: "${CONTAINER_GROUP:?CONTAINER_GROUP is required}"
+: "${STORAGE_ACCOUNT:?STORAGE_ACCOUNT is required}"
 
-base="${NEXUS_URL%/}"
+# Fetch the storage account key so we can upload the bootstrap script.
+echo "Fetching storage account key..."
+STORAGE_KEY=$(az storage account keys list \
+  --account-name "$STORAGE_ACCOUNT" \
+  --resource-group "$RESOURCE_GROUP" \
+  --query "[0].value" -o tsv)
 
-cf_args=()
-if [[ -n "${CF_ACCESS_CLIENT_ID:-}" ]]; then
-  : "${CF_ACCESS_CLIENT_SECRET:?CF_ACCESS_CLIENT_SECRET required when CF_ACCESS_CLIENT_ID is set}"
-  cf_args=(
-    -H "CF-Access-Client-Id: ${CF_ACCESS_CLIENT_ID}"
-    -H "CF-Access-Client-Secret: ${CF_ACCESS_CLIENT_SECRET}"
-  )
-fi
+# Write bootstrap script to a local temp file.
+# The password is embedded as a bash variable so curl arguments never contain
+# unescaped special characters.  The file is deleted immediately after use.
+tmpfile=$(mktemp /tmp/nexus-bootstrap-XXXXXX.sh)
+trap 'rm -f "$tmpfile"' EXIT
 
-# Step 1 — accept EULA (Nexus CE blocks all repository access until accepted).
-curl -sf ${cf_args[@]+"${cf_args[@]}"} \
-  -u "admin:admin123" \
-  -X PUT "${base}/service/rest/v1/system/eula" \
-  -H "Content-Type: application/json" \
-  -d '{"accepted":true}' \
-|| \
-curl -sf ${cf_args[@]+"${cf_args[@]}"} \
-  -u "admin:${NEW_PASSWORD}" \
-  -X PUT "${base}/service/rest/v1/system/eula" \
-  -H "Content-Type: application/json" \
-  -d '{"accepted":true}'
+# Escape any single quotes in the password for embedding inside a bash
+# single-quoted string: replace ' with '\'' (end-quote, escaped-quote, re-open).
+escaped_pw="${NEW_PASSWORD//\'/\'\\\'\'}"
 
-echo "EULA accepted."
+cat > "$tmpfile" <<BOOTEOF
+#!/bin/bash
+# Runs inside the Nexus container against localhost:8081 — no Cloudflare involved.
+PW='$escaped_pw'
+url='http://localhost:8081'
 
-# Step 2 — change admin password.
-curl -sf ${cf_args[@]+"${cf_args[@]}"} \
-  -u "admin:admin123" -X PUT "${base}/service/rest/v1/security/users/admin/change-password" \
-  -H "Content-Type: text/plain" -d "${NEW_PASSWORD}" \
-|| \
-curl -sf ${cf_args[@]+"${cf_args[@]}"} \
-  -u "admin:${NEW_PASSWORD}" -X PUT "${base}/service/rest/v1/security/users/admin/change-password" \
-  -H "Content-Type: text/plain" -d "${NEW_PASSWORD}"
+# Step 1: accept EULA (required since Nexus CE; idempotent).
+curl -sf -u admin:admin123 -X PUT "\$url/service/rest/v1/system/eula" \
+  -H 'Content-Type: application/json' -d '{"accepted":true}' \
+|| curl -sf -u "admin:\$PW" -X PUT "\$url/service/rest/v1/system/eula" \
+  -H 'Content-Type: application/json' -d '{"accepted":true}'
+echo 'EULA accepted.'
 
-echo "Nexus admin password set."
+# Step 2: change admin password (idempotent — falls back if already changed).
+curl -sf -u admin:admin123 -X PUT "\$url/service/rest/v1/security/users/admin/change-password" \
+  -H 'Content-Type: text/plain' -d "\$PW" \
+|| curl -sf -u "admin:\$PW" -X PUT "\$url/service/rest/v1/security/users/admin/change-password" \
+  -H 'Content-Type: text/plain' -d "\$PW"
+echo 'Nexus admin password set.'
+BOOTEOF
+
+echo "Uploading bootstrap script to Azure Files..."
+az storage file upload \
+  --account-name "$STORAGE_ACCOUNT" \
+  --account-key "$STORAGE_KEY" \
+  --share-name nexus-data \
+  --source "$tmpfile" \
+  --path bootstrap-tmp.sh \
+  --output none
+
+echo "Running bootstrap inside container..."
+az container exec \
+  --resource-group "$RESOURCE_GROUP" \
+  --name "$CONTAINER_GROUP" \
+  --container-name nexus \
+  --exec-command "bash /nexus-data/bootstrap-tmp.sh"
+
+echo "Cleaning up bootstrap script..."
+az storage file delete \
+  --account-name "$STORAGE_ACCOUNT" \
+  --account-key "$STORAGE_KEY" \
+  --share-name nexus-data \
+  --path bootstrap-tmp.sh \
+  --output none

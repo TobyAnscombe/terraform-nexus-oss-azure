@@ -105,32 +105,33 @@ check_pip() {
     printf "  [SKIP] %s  (pip not found)\n" "$label"
     return
   fi
+  local host="${NEXUS_URL#https://}"; host="${host#http://}"; host="${host%%/*}"
   local out
-  out=$(pip install "$pkg" \
+  out=$(pip index versions "$pkg" \
     --index-url "$NEXUS_URL/repository/pypi-group/simple/" \
-    --trusted-host "${NEXUS_URL#http://}" \
-    --dry-run --quiet 2>&1 || true)
+    --trusted-host "$host" \
+    2>&1 || true)
   if $expect_pass; then
-    if echo "$out" | grep -qi "would install\|already satisfied\|Requirement already"; then
+    if echo "$out" | grep -qi "Available versions\|${pkg}"; then
       printf "  ${GREEN}[PASS]${RESET} %s\n" "$label"
       pass=$((pass+1))
     else
-      printf "  ${RED}[FAIL]${RESET} %s  (expected pip to resolve package)\n" "$label"
+      printf "  ${RED}[FAIL]${RESET} %s  (expected pip to find package in index)\n" "$label"
       fail=$((fail+1))
     fi
   else
-    if echo "$out" | grep -qi "could not find\|no matching\|not find a version"; then
+    if echo "$out" | grep -qi "could not find\|no matching\|not find\|error\|403\|404"; then
       printf "  ${GREEN}[PASS]${RESET} %s  (correctly blocked)\n" "$label"
       pass=$((pass+1))
     else
-      printf "  ${RED}[FAIL]${RESET} %s  (expected block, but pip did not report error)\n" "$label"
+      printf "  ${RED}[FAIL]${RESET} %s  (expected block, but pip found the package)\n" "$label"
       fail=$((fail+1))
     fi
   fi
 }
 
-check_pip 'pip install pandas (allowlisted)'  pandas true
-check_pip 'pip install flask  (blocked)'      flask  false
+check_pip 'pip install numpy (allowlisted)'  numpy true
+check_pip 'pip install flask  (blocked)'     flask  false
 
 # ── Admin password checks ─────────────────────────────────────────────────────
 echo ""

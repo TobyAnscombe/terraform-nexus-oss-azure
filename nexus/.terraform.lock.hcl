@@ -3,13 +3,9 @@
 
 provider "registry.terraform.io/datadrivers/nexus" {
   version     = "2.8.0"
-  constraints = ">= 2.0.0"
+  constraints = ">= 2.0.0, < 3.0.0"
   hashes = [
-    "h1:+jmQ2TwL0bADNMJWIdungLmutSZjnFzmbBZ1pGUH+n4=",
-    "h1:I4ROiSarjlIoGjPVvCBEZ72uhys5n8p3poQdR74ZSnE=",
-    "h1:QgLsurGf3gHit506dztbU/+3HvebJvw6Ry3P/TgoIGE=",
     "h1:Yi+AqbP9QqCA4Jg8ajY0nLQSNCZj9zOTTZXfEYF5t5Q=",
-    "h1:zLQc/axoRMJYld5qKtyVAUM/2bigFeNd5qAdBclXviI=",
     "zh:2ba7c983d371e633fcdc477c8836301450e04f6ccd7f7534fd6207daeecbfb2f",
     "zh:3cda2da98e4068ead0c8de046666999d8e16a774edb15d7505c7e48709e75aa3",
     "zh:5e2cfdaf219ebf16948243d91cf3bc0fca2d0a60b3cb3a93f651a95224c9eb07",

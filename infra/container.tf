@@ -26,7 +26,7 @@ resource "azurerm_container_group" "nexus" {
   # ---------------------------------------------------------------------------
   container {
     name   = "nexus"
-    image  = "sonatype/nexus3:3.92.2"
+    image  = var.nexus_image
     cpu    = var.nexus_cpu
     memory = var.nexus_memory_gb
 
@@ -81,7 +81,7 @@ resource "azurerm_container_group" "nexus" {
   # ---------------------------------------------------------------------------
   container {
     name   = "cloudflared"
-    image  = "cloudflare/cloudflared:latest"
+    image  = var.cloudflared_image
     cpu    = 0.25
     memory = 0.5
 

@@ -169,6 +169,24 @@ terraform apply
 
 **Total time: ~5–7 minutes** (includes a 2-minute startup wait for Nexus).
 
+### Bot Fight Mode note
+
+Cloudflare's **Bot Fight Mode** (on by default) blocks programmatic HTTP clients — including the `datadrivers/nexus` Terraform provider and the password bootstrap `curl`. If `terraform apply nexus/` or `scripts/set-nexus-password.sh` fail with connection errors, exec into the container and run the bootstrap against `localhost:8081` directly, bypassing Cloudflare:
+
+```bash
+# Change the password from inside the container (bypasses Cloudflare entirely)
+az container exec \
+  --resource-group rg-nexus-oss \
+  --name aci-prod-nexus-oss \
+  --container-name nexus \
+  --exec-command "bash"
+# then inside the container:
+curl -sf -u admin:admin123 -X PUT http://localhost:8081/service/rest/v1/system/eula \
+  -H 'Content-Type: application/json' -d '{"accepted":true}'
+curl -sf -u admin:admin123 -X PUT http://localhost:8081/service/rest/v1/security/users/admin/change-password \
+  -H 'Content-Type: text/plain' -d 'YOUR_NEW_PASSWORD'
+```
+
 ### Phase 2 — Nexus configuration
 
 **macOS / Linux**
@@ -481,7 +499,21 @@ az container logs \
 
 ### Nexus admin password
 
-Because `NEXUS_SECURITY_RANDOMPASSWORD=false` is set, Nexus starts with the fixed default password `admin123`. Phase 2 (`nexus/`) sets the real password via the `admin_password` variable.
+Because `NEXUS_SECURITY_RANDOMPASSWORD=false` is set, Nexus starts with the fixed default password `admin123`. Phase 2 (`nexus/`) sets the real password via the `admin_password` variable, using `scripts/set-nexus-password.sh` (or `.ps1`).
+
+To reset or re-set the password manually (e.g. after a container restart resets to `admin123`):
+
+**macOS / Linux**
+```bash
+NEXUS_URL=https://nexus.example.com \
+NEW_PASSWORD=<your-admin-password> \
+bash scripts/set-nexus-password.sh
+```
+
+**Windows (PowerShell)**
+```powershell
+.\scripts\set-nexus-password.ps1 -NexusUrl https://nexus.example.com -NewPassword <your-admin-password>
+```
 
 If Phase 2 fails to authenticate, confirm `admin_password` in `nexus/terraform.tfvars` and re-run. If the state is unknown, exec into the container:
 
@@ -521,9 +553,9 @@ Schedule upgrades during a maintenance window. pip clients will get connection e
 
 1. **Check release notes** for breaking changes or required configuration updates.
 
-2. **Update the image tag** in `infra/container.tf`:
+2. **Update the image tag** in `infra/variables.tf`:
    ```hcl
-   image = "sonatype/nexus3:3.X.Y"
+   nexus_image = "sonatype/nexus3:3.X.Y"
    ```
 
 3. **Apply the infra change** — ACI tears down and recreates the container:
@@ -554,9 +586,37 @@ Schedule upgrades during a maintenance window. pip clients will get connection e
    cd nexus; terraform apply
    ```
 
+### Staying notified of new versions
+
+Both container images are hosted on GitHub. The simplest way to receive release notifications is to watch the GitHub repositories:
+
+1. Go to each repository and click **Watch → Custom → Releases** (untick everything else to avoid noise):
+   - Nexus OSS: [github.com/sonatype/nexus-public](https://github.com/sonatype/nexus-public)
+   - cloudflared: [github.com/cloudflare/cloudflared](https://github.com/cloudflare/cloudflared)
+
+   GitHub will send an email for each new release. Nexus publishes roughly monthly; cloudflared publishes roughly weekly.
+
+2. **RSS / Atom feeds** — if you prefer a feed reader instead of email:
+
+   | Image | Feed URL |
+   |-------|----------|
+   | sonatype/nexus3 | `https://github.com/sonatype/nexus-public/releases.atom` |
+   | cloudflare/cloudflared | `https://github.com/cloudflare/cloudflared/releases.atom` |
+
+3. **Renovate** (automated PRs) — [Renovate Bot](https://github.com/renovatebot/renovate) can detect Docker image versions inside Terraform variable defaults and open a PR automatically when a new tag is published. Install it from the GitHub Marketplace and add a `renovate.json` at the repo root:
+
+   ```json
+   {
+     "extends": ["config:recommended"],
+     "terraform": { "enabled": true }
+   }
+   ```
+
+   Renovate will find `nexus_image` and `cloudflared_image` in `infra/variables.tf` and raise a PR for each new release, including a changelog link. This is the lowest-overhead option for keeping versions current.
+
 ### Rollback
 
-If the new version has a startup failure, revert the tag in `infra/container.tf` to the previous version and re-apply. The data volume is compatible — Nexus does not write a migration flag that prevents downgrading within a minor version series.
+If the new version has a startup failure, revert the tag in `infra/variables.tf` to the previous version and re-apply. The data volume is compatible — Nexus does not write a migration flag that prevents downgrading within a minor version series.
 
 > **Downgrading across a major version boundary** (e.g. 3.y → 3.x where the DB schema changed) is not supported by Sonatype and may corrupt the data volume. Always snapshot the Azure Files share before a major upgrade:
 > ```bash
@@ -609,14 +669,14 @@ az group delete --name rg-nexus-tf-state
 ```
 .
 ├── infra/                         Phase 1 — Azure infrastructure
-│   ├── providers.tf               azurerm / null / random / time
-│   ├── variables.tf               All inputs (location, sizing, networking, etc.)
-│   ├── locals.tf                  URLs, JVM sizing, use_vnet flag
+│   ├── providers.tf               azurerm / null / random / time / http
+│   ├── variables.tf               All inputs (location, sizing, container images, networking, Cloudflare tunnel, etc.)
+│   ├── locals.tf                  URLs, JVM sizing
 │   ├── main.tf                    Resource Group + random suffix
 │   ├── storage.tf                 Storage Account + nexus-data File Share
-│   ├── network.tf                 VNet + ACI subnet + NSG (conditional)
+│   ├── network.tf                 VNet + ACI subnet + NSG
 │   ├── container.tf               ACI Container Group + time_sleep.nexus_ready (2 min)
-│   ├── outputs.tf                 nexus_base_url (gated on time_sleep), pip URLs, snippets
+│   ├── outputs.tf                 nexus_base_url, nexus_private_url, pip URLs, snippets
 │   ├── terraform.tfvars.example
 │   ├── backend.hcl.example        key = infra.tfstate
 │   └── .terraform.lock.hcl
@@ -625,7 +685,8 @@ az group delete --name rg-nexus-tf-state
 │   ├── providers.tf               datadrivers/nexus >= 2.0.0; URL from infra remote state
 │   ├── variables.tf               admin_password, state_storage_account,
 │   │                                pypi_allowlist (7 categories), r_allowlist (5 categories)
-│   ├── main.tf                    nexus_security_anonymous
+│   ├── main.tf                    null_resource: password bootstrap via set-nexus-password script
+│   │                                nexus_security_anonymous
 │   │                                pypi-allowlist routing rule (loop-generated matchers)
 │   │                                pypi-hosted / pypi-pypi.org proxy / pypi-group
 │   │                                r-cran-allowlist routing rule (loop-generated matchers)
@@ -638,12 +699,14 @@ az group delete --name rg-nexus-tf-state
 ├── scripts/
 │   ├── create-backend.sh          Bash: provision remote state storage + write backend.hcl
 │   ├── create-backend.ps1         PowerShell: same as above for Windows
-│   ├── smoke-test.sh              Bash: Phase 1+2 smoke test (nginx→Nexus chain, PyPI, CRAN)
+│   ├── set-nexus-password.sh      Bash: accept EULA + change admin password via REST API
+│   ├── set-nexus-password.ps1     PowerShell: same as above for Windows
+│   ├── smoke-test.sh              Bash: Phase 1+2 smoke test (PyPI, CRAN)
 │   ├── smoke-test.ps1             PowerShell: same as above for Windows
 │   ├── smoke-test-phase2.sh       Bash: comprehensive Phase 2 validation (auth, repos, routing rules, pip client)
 │   └── smoke-test-phase2.ps1      PowerShell: same as above for Windows
 └── .github/
     └── workflows/
-        └── ci.yml                 infra (CI) → infra-apply → nexus-config (CI) → nexus-config-apply
-                                     (apply jobs run on main branch pushes only)
+        └── ci.yml                 fmt / validate / TFLint / Trivy for infra/ and nexus/
+                                     (apply is manual only)
 ```

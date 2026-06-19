@@ -21,23 +21,8 @@ locals {
   # Platform detection: Windows absolute paths start with a drive letter + backslash.
   is_windows = length(regexall("^[A-Za-z]:\\\\", abspath(path.module))) > 0
 
-  # Password bootstrap commands — logically identical, syntactically different per platform.
-  # Both try admin123 first (new/reset instance); fall back to var.admin_password (re-apply).
-  # Note: Terraform only interpolates ${...} in strings; bare $word is passed through as-is.
-  _pw_ps = <<-PS
-    $url = $env:NEXUS_URL + '/service/rest/v1/security/users/admin/change-password'
-    curl.exe -sf -u admin:admin123 -X PUT $url -H 'Content-Type: text/plain' -d $env:NEW_PASSWORD
-    if ($LASTEXITCODE -ne 0) {
-      $cred = 'admin:' + $env:NEW_PASSWORD
-      curl.exe -sf -u $cred -X PUT $url -H 'Content-Type: text/plain' -d $env:NEW_PASSWORD
-    }
-  PS
-
-  _pw_sh = <<-SH
-    url="$NEXUS_URL/service/rest/v1/security/users/admin/change-password"
-    curl -sf -u "admin:admin123" -X PUT "$url" -H 'Content-Type: text/plain' -d "$NEW_PASSWORD" ||
-    curl -sf -u "admin:$NEW_PASSWORD" -X PUT "$url" -H 'Content-Type: text/plain' -d "$NEW_PASSWORD"
-  SH
+  pw_script_sh = abspath("${path.module}/../scripts/set-nexus-password.sh")
+  pw_script_ps = abspath("${path.module}/../scripts/set-nexus-password.ps1")
 }
 
 ###############################################################################
@@ -59,14 +44,14 @@ resource "null_resource" "set_admin_password" {
   }
 
   # Platform-adaptive: PowerShell on Windows, bash on macOS/Linux.
-  # Password is passed via environment to keep it out of process argv and Terraform debug logs.
+  # Credentials are passed via environment to keep them out of process argv and Terraform debug logs.
   provisioner "local-exec" {
-    interpreter = local.is_windows ? ["PowerShell", "-Command"] : ["bash", "-c"]
+    interpreter = local.is_windows ? ["PowerShell", "-File"] : ["bash"]
     environment = {
       NEXUS_URL    = local.nexus_url
       NEW_PASSWORD = var.admin_password
     }
-    command = local.is_windows ? local._pw_ps : local._pw_sh
+    command = local.is_windows ? local.pw_script_ps : local.pw_script_sh
   }
 }
 

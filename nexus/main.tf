@@ -43,7 +43,7 @@ resource "nexus_routing_rule" "pypi_allowlist" {
   matchers = toset(flatten([
     for pkg in local.all_pypi_packages : [
       "^/simple/${pkg}(/.*)?$",
-      "^/packages(.*/)?${replace(pkg, ".", "\\.")}[-_]",
+      "^/packages/${replace(pkg, ".", "\\.")}(/.*)?$",
     ]
   ]))
 

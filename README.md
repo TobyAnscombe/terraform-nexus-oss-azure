@@ -169,12 +169,6 @@ terraform apply
 
 **Total time: ~5–7 minutes** (includes a 2-minute startup wait for Nexus).
 
-### Bot Fight Mode note
-
-Cloudflare's **Bot Fight Mode** blocks programmatic HTTP clients from corporate networks (SSL-inspecting proxies alter the TLS fingerprint, causing Cloudflare to flag the request as a bot). The `datadrivers/nexus` provider connects to Nexus through the Cloudflare Tunnel — but the password **bootstrap** scripts (`set-nexus-password.sh/ps1`) now bypass this entirely by uploading a temp script to Azure Files and running it inside the container via `az container exec`, which goes through Azure ARM APIs rather than Cloudflare.
-
-**No action needed** — `terraform apply nexus/` handles this automatically via the `null_resource.set_admin_password` resource.
-
 ### Phase 2 — Nexus configuration
 
 **macOS / Linux**
@@ -195,6 +189,14 @@ Copy-Item terraform.tfvars.example terraform.tfvars
 terraform init -backend-config=backend.hcl
 ```
 
+> **Before running `terraform apply`:** Nexus CE requires the EULA to be accepted and the default password changed before any API calls will succeed. Do both manually in the Nexus UI:
+>
+> 1. Open `https://<your-cloudflare-hostname>` in a browser
+> 2. Accept the EULA when prompted
+> 3. Change the admin password from `admin123` to the value you have set as `admin_password` in `nexus/terraform.tfvars`
+>
+> The `datadrivers/nexus` provider authenticates with `admin_password`. If the password has not been changed yet, every provider call will return 401 and the apply will fail.
+
 Nexus ships with a built-in `anonymous` user that must be imported into state before the first apply, otherwise Terraform will try to create it and fail with a duplicate-user error:
 
 ```
@@ -202,44 +204,7 @@ terraform import nexus_security_user.anonymous anonymous
 terraform apply
 ```
 
-Phase 2 reads the Nexus URL from Phase 1's remote state and changes the admin password from the Nexus default (`admin123`) to the value set in `admin_password`. Run Phase 1 fully before Phase 2.
-
-### Password bootstrap script
-
-`scripts/set-nexus-password.sh` (and `.ps1` for Windows) is called automatically by `terraform apply nexus/` via the `null_resource.set_admin_password` resource. You can also run it manually — for example to reset the password after a container restart.
-
-The script uploads a temporary bash script to the Nexus Azure Files share and executes it inside the container via `az container exec`, running `curl` against `localhost:8081`. This bypasses Cloudflare entirely — no tunnel involved. The temp file is deleted immediately after the bootstrap completes.
-
-The bootstrap is idempotent: it tries `admin123` first (fresh instance), then falls back to `NEW_PASSWORD` (already bootstrapped). It also accepts the Nexus CE EULA as its first step, which is required before any repository content is accessible.
-
-**Requires**: Azure CLI (`az login`) with at least Contributor access to the resource group.
-
-**macOS / Linux**
-```bash
-NEW_PASSWORD=<your-admin-password> \
-RESOURCE_GROUP=rg-nexus-oss \
-CONTAINER_GROUP=aci-prod-nexus-oss \
-STORAGE_ACCOUNT=<storage-account-name> \
-bash scripts/set-nexus-password.sh
-```
-
-**Windows (PowerShell)**
-```powershell
-$env:NEW_PASSWORD    = "<your-admin-password>"
-$env:RESOURCE_GROUP  = "rg-nexus-oss"
-$env:CONTAINER_GROUP = "aci-prod-nexus-oss"
-$env:STORAGE_ACCOUNT = "<storage-account-name>"
-.\scripts\set-nexus-password.ps1
-```
-
-Or using named parameters:
-```powershell
-.\scripts\set-nexus-password.ps1 `
-  -NewPassword    "<your-admin-password>" `
-  -ResourceGroup  "rg-nexus-oss" `
-  -ContainerGroup "aci-prod-nexus-oss" `
-  -StorageAccount "<storage-account-name>"
-```
+Phase 2 reads the Nexus URL from Phase 1's remote state. Run Phase 1 fully before Phase 2.
 
 ---
 
@@ -523,37 +488,11 @@ az container logs \
 
 ### Nexus admin password
 
-Because `NEXUS_SECURITY_RANDOMPASSWORD=false` is set, Nexus starts with the fixed default password `admin123`. Phase 2 (`nexus/`) sets the real password via the `admin_password` variable, using `scripts/set-nexus-password.sh` (or `.ps1`).
+Because `NEXUS_SECURITY_RANDOMPASSWORD=false` is set, Nexus always starts with the fixed default password `admin123`. The password must be changed manually via the Nexus UI before Phase 2 can run (see [Phase 2 deploy steps](#phase-2--nexus-configuration) above).
 
-To reset or re-set the password manually (e.g. after a container restart resets to `admin123`):
+If the container is replaced (e.g. after a `terraform apply` to `infra/` that forces ACI recreation), the password resets to `admin123`. You must change it again via the UI before re-running Phase 2.
 
-**macOS / Linux**
-```bash
-NEW_PASSWORD=<your-admin-password> \
-RESOURCE_GROUP=rg-nexus-oss \
-CONTAINER_GROUP=aci-prod-nexus-oss \
-STORAGE_ACCOUNT=<storage-account-name> \
-bash scripts/set-nexus-password.sh
-```
-
-**Windows (PowerShell)**
-```powershell
-.\scripts\set-nexus-password.ps1 `
-  -NewPassword    "<your-admin-password>" `
-  -ResourceGroup  "rg-nexus-oss" `
-  -ContainerGroup "aci-prod-nexus-oss" `
-  -StorageAccount "<storage-account-name>"
-```
-
-If Phase 2 fails to authenticate, confirm `admin_password` in `nexus/terraform.tfvars` and re-run. If the state is unknown, exec into the container:
-
-```bash
-az container exec \
-  --resource-group rg-nexus-oss \
-  --name aci-prod-nexus-oss \
-  --container-name nexus \
-  --exec-command "ls /nexus-data/admin.password 2>/dev/null && cat /nexus-data/admin.password || echo 'no password file — default admin123 is active'"
-```
+If Phase 2 fails with 401 errors, the password in `nexus/terraform.tfvars` (`admin_password`) does not match what is set in Nexus. Either reset the password via the UI to match `admin_password`, or update `admin_password` to match what is set in Nexus.
 
 ---
 
@@ -715,8 +654,7 @@ az group delete --name rg-nexus-tf-state
 │   ├── providers.tf               datadrivers/nexus >= 2.0.0; URL from infra remote state
 │   ├── variables.tf               admin_password, state_storage_account,
 │   │                                pypi_allowlist (7 categories), r_allowlist (5 categories)
-│   ├── main.tf                    null_resource: password bootstrap via set-nexus-password script
-│   │                                nexus_security_anonymous
+│   ├── main.tf                    nexus_security_anonymous
 │   │                                pypi-allowlist routing rule (loop-generated matchers)
 │   │                                pypi-hosted / pypi-pypi.org proxy / pypi-group
 │   │                                r-cran-allowlist routing rule (loop-generated matchers)
@@ -729,8 +667,6 @@ az group delete --name rg-nexus-tf-state
 ├── scripts/
 │   ├── create-backend.sh          Bash: provision remote state storage + write backend.hcl
 │   ├── create-backend.ps1         PowerShell: same as above for Windows
-│   ├── set-nexus-password.sh      Bash: accept EULA + change admin password via az container exec
-│   ├── set-nexus-password.ps1     PowerShell: same as above for Windows
 │   ├── smoke-test.sh              Bash: Phase 1+2 smoke test (PyPI, CRAN)
 │   ├── smoke-test.ps1             PowerShell: same as above for Windows
 │   ├── smoke-test-phase2.sh       Bash: comprehensive Phase 2 validation (auth, repos, routing rules, pip client)

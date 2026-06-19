@@ -10,55 +10,13 @@
 ###############################################################################
 
 locals {
-  nexus_url            = data.terraform_remote_state.infra.outputs.nexus_base_url
-  container_group_name = data.terraform_remote_state.infra.outputs.container_group_name
-  storage_account_name = data.terraform_remote_state.infra.outputs.storage_account_name
+  nexus_url = data.terraform_remote_state.infra.outputs.nexus_base_url
 
   # Flatten all PyPI packages into a single list for the routing rule.
   all_pypi_packages = flatten(values(var.pypi_allowlist))
 
   # Flatten all R packages; dots are escaped for regex matching.
   all_r_packages = flatten(values(var.r_allowlist))
-
-  # Platform detection: Windows absolute paths start with a drive letter + colon.
-  # abspath() returns forward slashes on all platforms, so we match on the colon only.
-  is_windows = length(regexall("^[A-Za-z]:", abspath(path.module))) > 0
-
-  pw_script_sh = abspath("${path.module}/../scripts/set-nexus-password.sh")
-  pw_script_ps = abspath("${path.module}/../scripts/set-nexus-password.ps1")
-}
-
-###############################################################################
-# Bootstrap — change the default admin123 password to var.admin_password.
-#
-# Nexus boots with NEXUS_SECURITY_RANDOMPASSWORD=false so the initial password
-# is always "admin123".  This step uses the Nexus REST API to change it to the
-# value supplied via var.admin_password before any provider resources run.
-#
-# Idempotent: if the password was already changed on a previous apply the
-# admin123 curl will 401; the fallback curl (using var.admin_password) will
-# succeed, confirming the desired password is already in place.
-###############################################################################
-
-resource "null_resource" "set_admin_password" {
-  triggers = {
-    password_hash   = sha256(var.admin_password)
-    container_group = local.container_group_name
-  }
-
-  # Bootstrap runs via az container exec against localhost:8081 inside the ACI
-  # container — traffic goes through Azure ARM APIs, not Cloudflare, so it works
-  # from any machine that has az CLI access regardless of network restrictions.
-  provisioner "local-exec" {
-    interpreter = local.is_windows ? ["PowerShell", "-File"] : ["bash"]
-    environment = {
-      NEW_PASSWORD    = var.admin_password
-      RESOURCE_GROUP  = data.terraform_remote_state.infra.outputs.resource_group_name
-      CONTAINER_GROUP = local.container_group_name
-      STORAGE_ACCOUNT = local.storage_account_name
-    }
-    command = local.is_windows ? local.pw_script_ps : local.pw_script_sh
-  }
 }
 
 ###############################################################################
@@ -70,7 +28,6 @@ resource "nexus_security_anonymous" "main" {
   user_id    = "anonymous"
   realm_name = "NexusAuthorizingRealm"
 
-  depends_on = [null_resource.set_admin_password]
 }
 
 ###############################################################################
@@ -92,7 +49,6 @@ resource "nexus_routing_rule" "pypi_allowlist" {
     ]
   ]))
 
-  depends_on = [null_resource.set_admin_password]
 }
 
 resource "nexus_repository_pypi_hosted" "main" {
@@ -105,7 +61,6 @@ resource "nexus_repository_pypi_hosted" "main" {
     write_policy                   = "ALLOW"
   }
 
-  depends_on = [null_resource.set_admin_password]
 }
 
 resource "nexus_repository_pypi_proxy" "main" {
@@ -183,7 +138,6 @@ resource "nexus_routing_rule" "r_cran_allowlist" {
     ])
   ))
 
-  depends_on = [null_resource.set_admin_password]
 }
 
 resource "nexus_repository_r_hosted" "main" {
@@ -196,7 +150,6 @@ resource "nexus_repository_r_hosted" "main" {
     write_policy                   = "ALLOW"
   }
 
-  depends_on = [null_resource.set_admin_password]
 }
 
 resource "nexus_repository_r_proxy" "main" {

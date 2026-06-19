@@ -18,8 +18,9 @@ locals {
   # Flatten all R packages; dots are escaped for regex matching.
   all_r_packages = flatten(values(var.r_allowlist))
 
-  # Platform detection: Windows absolute paths start with a drive letter + backslash.
-  is_windows = length(regexall("^[A-Za-z]:\\\\", abspath(path.module))) > 0
+  # Platform detection: Windows absolute paths start with a drive letter + colon.
+  # abspath() returns forward slashes on all platforms, so we match on the colon only.
+  is_windows = length(regexall("^[A-Za-z]:", abspath(path.module))) > 0
 
   pw_script_sh = abspath("${path.module}/../scripts/set-nexus-password.sh")
   pw_script_ps = abspath("${path.module}/../scripts/set-nexus-password.ps1")

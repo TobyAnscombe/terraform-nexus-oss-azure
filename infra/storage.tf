@@ -43,11 +43,21 @@ resource "azurerm_storage_account" "main" {
   tags = local.common_tags
 }
 
+# Azure storage firewall rules take a few seconds to propagate after the
+# storage account is created/updated.  Without this pause the file share
+# creation hits the data-plane endpoint before the caller's IP is allowed,
+# producing a 403.
+resource "time_sleep" "storage_firewall_propagate" {
+  depends_on      = [azurerm_storage_account.main]
+  create_duration = "30s"
+}
+
 ###############################################################################
 # Single File Share — all Nexus persistent data
 # Mounted at /nexus-data: blob store, OrientDB, config, logs.
 ###############################################################################
 resource "azurerm_storage_share" "nexus_data" {
+  depends_on           = [time_sleep.storage_firewall_propagate]
   name                 = "nexus-data"
   storage_account_name = azurerm_storage_account.main.name
   quota                = var.nexus_data_share_quota_gb

@@ -57,7 +57,7 @@ if ($eulaErr1) {
   try { Invoke-EulaAccept -CurrentPassword $NewPassword } catch { $eulaErr2 = $_.Exception.Message }
 }
 if ($eulaErr1 -and $eulaErr2) {
-  throw "Failed to accept EULA at $base — admin123: $eulaErr1 | new_password: $eulaErr2"
+  throw "Failed to accept EULA at $base - admin123: $eulaErr1 / new_password: $eulaErr2"
 }
 Write-Host 'EULA accepted.'
 
@@ -68,6 +68,6 @@ if ($pwErr1) {
   try { Invoke-PasswordChange -CurrentPassword $NewPassword } catch { $pwErr2 = $_.Exception.Message }
 }
 if ($pwErr1 -and $pwErr2) {
-  throw "Failed to set admin password at $base — admin123: $pwErr1 | new_password: $pwErr2"
+  throw "Failed to set admin password at $base - admin123: $pwErr1 / new_password: $pwErr2"
 }
 if ($pwErr1) { Write-Host 'Nexus admin password confirmed (already set).' } else { Write-Host 'Nexus admin password set.' }

@@ -84,24 +84,22 @@ No ports are exposed on Azure. cloudflared connects **outbound** to Cloudflare's
 
 ---
 
-## Two-phase layout
+## Deployment
 
-The repository uses a two-phase Terraform structure:
+This repo uses a two-phase Terraform structure:
 
 | Phase | Directory | Manages |
 |-------|-----------|---------|
 | **1 — infra** | `infra/` | Azure Container Instance, Storage Account, VNet / NSG, Resource Group |
 | **2 — nexus** | `nexus/` | Nexus repositories, routing rules, roles, anonymous access |
 
-Phase 2 reads the Nexus URL from Phase 1's remote state. A `time_sleep` resource in Phase 1
-ensures the `nexus_base_url` output is only written after a 2-minute startup wait, so Phase 2
-cannot initialise the nexus provider before Nexus is ready.
+Phase 2 reads the Nexus URL from Phase 1 remote state. A `time_sleep` in Phase 1 delays the output by 2 minutes so Phase 2 cannot connect before Nexus has finished starting.
 
 ---
 
-## Remote state setup (one-time)
+### Step 1 — Remote state backend (one-time)
 
-Terraform state is stored in Azure Blob Storage so the state file is shared and locked across team members. Run this once before the first deploy:
+Terraform state is stored in Azure Blob Storage. Run this once before the first deploy:
 
 **macOS / Linux**
 ```bash
@@ -117,7 +115,7 @@ az account set --subscription "<subscription-id>"
 .\scripts\create-backend.ps1
 ```
 
-Both scripts create the storage account, blob container, and write `backend.hcl` in the repo root. Copy and adjust the key for each phase:
+The script creates the storage account, blob container, and writes `backend.hcl` in the repo root. Copy it for each phase:
 
 **macOS / Linux**
 ```bash
@@ -135,17 +133,15 @@ sed 's/nexus-oss.terraform.tfstate/nexus.tfstate/'  backend.hcl > nexus/backend.
 
 ---
 
-## Deploy
-
-### Phase 1 — Infrastructure
-
-Before deploying, create the Cloudflare Tunnel:
+### Step 2 — Create Cloudflare Tunnel (one-time)
 
 1. In [Zero Trust dashboard](https://one.dash.cloudflare.com) → **Networks → Tunnels → Create a tunnel** (Cloudflared type)
 2. Under **Public Hostnames**, add: `<your-hostname>` → `http://localhost:8081`
-3. Copy the tunnel token into `infra/terraform.tfvars` as `cloudflare_tunnel_token`
+3. Copy the tunnel token — you will need it in the next step
 
-Then deploy:
+---
+
+### Step 3 — Phase 1: deploy infrastructure
 
 **macOS / Linux**
 ```bash
@@ -169,42 +165,65 @@ terraform apply
 
 **Total time: ~5–7 minutes** (includes a 2-minute startup wait for Nexus).
 
-### Phase 2 — Nexus configuration
+---
+
+### Step 4 — Bootstrap Nexus (manual, browser)
+
+Nexus CE requires the EULA to be accepted and the default password changed before any API or Terraform calls will succeed. Do this once in a browser immediately after Phase 1 completes:
+
+1. Open `https://<your-cloudflare-hostname>`
+2. Accept the EULA when prompted
+3. Change the admin password from `admin123` to the value you plan to set as `admin_password` in `nexus/terraform.tfvars`
+
+> If the container is ever replaced (e.g. by a `terraform apply` to `infra/` that forces ACI recreation), the password resets to `admin123` and this step must be repeated before re-running Phase 2.
+
+---
+
+### Step 5 — Phase 2: configure Nexus
 
 **macOS / Linux**
 ```bash
 cd nexus
 cp terraform.tfvars.example terraform.tfvars
-# set admin_password and state_storage_account
+# set admin_password (must match what you set in the browser above)
+# set state_storage_account
 
 terraform init --backend-config=backend.hcl
+terraform import nexus_security_user.anonymous anonymous
+terraform apply
 ```
 
 **Windows (PowerShell)**
 ```powershell
 cd nexus
 Copy-Item terraform.tfvars.example terraform.tfvars
-# set admin_password and state_storage_account
+# set admin_password (must match what you set in the browser above)
+# set state_storage_account
 
 terraform init -backend-config=backend.hcl
-```
-
-> **Before running `terraform apply`:** Nexus CE requires the EULA to be accepted and the default password changed before any API calls will succeed. Do both manually in the Nexus UI:
->
-> 1. Open `https://<your-cloudflare-hostname>` in a browser
-> 2. Accept the EULA when prompted
-> 3. Change the admin password from `admin123` to the value you have set as `admin_password` in `nexus/terraform.tfvars`
->
-> The `datadrivers/nexus` provider authenticates with `admin_password`. If the password has not been changed yet, every provider call will return 401 and the apply will fail.
-
-Nexus ships with a built-in `anonymous` user that must be imported into state before the first apply, otherwise Terraform will try to create it and fail with a duplicate-user error:
-
-```
 terraform import nexus_security_user.anonymous anonymous
 terraform apply
 ```
 
-Phase 2 reads the Nexus URL from Phase 1's remote state. Run Phase 1 fully before Phase 2.
+> The `terraform import` is required on first apply only. Nexus ships with a built-in `anonymous` user — without importing it first, Terraform will try to create it and fail with a duplicate-user error.
+
+---
+
+### Step 6 — Verify
+
+**macOS / Linux**
+```bash
+bash scripts/smoke-test.sh https://<your-cloudflare-hostname>
+bash scripts/smoke-test-phase2.sh https://<your-cloudflare-hostname> <admin-password>
+```
+
+**Windows (PowerShell)**
+```powershell
+.\scripts\smoke-test.ps1 -NexusUrl https://<your-cloudflare-hostname>
+.\scripts\smoke-test-phase2.ps1 -NexusUrl https://<your-cloudflare-hostname> -AdminPassword <admin-password>
+```
+
+All checks should pass before handing the instance over to users.
 
 ---
 

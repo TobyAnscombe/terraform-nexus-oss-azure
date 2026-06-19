@@ -19,7 +19,7 @@ Set-StrictMode -Version Latest
 
 # -- Resolve URL --------------------------------------------------------------
 if (-not $NexusUrl) {
-    $infraDir = Join-Path $PSScriptRoot '..' 'infra'
+    $infraDir = Join-Path (Join-Path $PSScriptRoot '..') 'infra'
     Push-Location $infraDir
     try   { $NexusUrl = (terraform output -raw nexus_url 2>$null).Trim() }
     finally { Pop-Location }

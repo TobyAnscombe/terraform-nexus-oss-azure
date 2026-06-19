@@ -22,6 +22,14 @@ nexus_data_share_quota_gb = 100
 vnet_address_space = "10.100.0.0/16"
 aci_subnet_prefix  = "10.100.1.0/24"
 
+# ── Storage network access (optional) ────────────────────────────────────────
+# Subnets outside this deployment that should reach the Nexus file share
+# (e.g. a shared services VNet, dev workstation subnet, or peered VNet).
+# Each subnet must have the Microsoft.Storage service endpoint enabled.
+# additional_storage_subnet_ids = [
+#   "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.Network/virtualNetworks/<vnet>/subnets/<subnet>",
+# ]
+
 # ── Cloudflare Tunnel ─────────────────────────────────────────────────────────
 # 1. In Zero Trust dashboard → Networks → Tunnels → Create a tunnel (Cloudflared).
 # 2. Under Public Hostnames, add:  <hostname>  →  http://localhost:8081

@@ -106,6 +106,21 @@ variable "aci_subnet_prefix" {
 }
 
 # ---------------------------------------------------------------------------
+# Storage network access
+# ---------------------------------------------------------------------------
+
+variable "additional_storage_subnet_ids" {
+  description = <<-EOF
+    Resource IDs of existing subnets that should be allowed to access the
+    Nexus storage account (e.g. a shared services VNet or dev workstation subnet).
+    Each subnet must have the Microsoft.Storage service endpoint enabled.
+    The ACI subnet is always included automatically.
+  EOF
+  type    = list(string)
+  default = []
+}
+
+# ---------------------------------------------------------------------------
 # Cloudflare Tunnel
 # ---------------------------------------------------------------------------
 

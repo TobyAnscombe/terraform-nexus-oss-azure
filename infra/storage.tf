@@ -35,7 +35,7 @@ resource "azurerm_storage_account" "main" {
   #   2. Runner's public IP              — so Terraform can create the file share
   network_rules {
     default_action             = "Deny"
-    virtual_network_subnet_ids = [azurerm_subnet.aci.id]
+    virtual_network_subnet_ids = concat([azurerm_subnet.aci.id], var.additional_storage_subnet_ids)
     ip_rules                   = [chomp(data.http.runner_ip.response_body)]
     bypass                     = ["AzureServices"]
   }

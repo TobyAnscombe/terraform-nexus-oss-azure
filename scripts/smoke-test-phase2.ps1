@@ -19,7 +19,7 @@ param(
 
 Set-StrictMode -Version Latest
 
-# ── Resolve URL ──────────────────────────────────────────────────────────────
+# -- Resolve URL --------------------------------------------------------------
 if (-not $NexusUrl) {
     $infraDir = Join-Path $PSScriptRoot '..' 'infra'
     Push-Location $infraDir
@@ -36,7 +36,7 @@ if (-not $AdminPassword) {
     $AdminPassword = Read-Host 'Enter admin password'
 }
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# -- Helpers ------------------------------------------------------------------
 $pass = 0
 $fail = 0
 
@@ -73,9 +73,9 @@ function CheckBody {
 
 $adminAuth  = @('-u', "admin:$AdminPassword")
 $defaultAuth = @('-u', 'admin:admin123')
-$sep = '─' * 60
+$sep = '-' * 60
 
-# ── Anonymous checks ──────────────────────────────────────────────────────────
+# -- Anonymous checks ----------------------------------------------------------
 Write-Host ""
 Write-Host "Nexus Phase 2 smoke test  $NexusUrl"
 Write-Host $sep
@@ -88,7 +88,7 @@ CheckHttp 'Blocked package denied (flask)'      "$NexusUrl/repository/pypi-group
 CheckHttp 'CRAN PACKAGES index readable'        "$NexusUrl/repository/r-group/src/contrib/PACKAGES.gz"
 CheckHttp 'Anonymous write rejected (pypi-hosted)' "$NexusUrl/repository/pypi-hosted/" -Expect @(401) -CurlArgs @('-X', 'POST')
 
-# ── pip client tests ─────────────────────────────────────────────────────────
+# -- pip client tests ---------------------------------------------------------
 Write-Host ""
 Write-Host "pip client"
 
@@ -126,32 +126,32 @@ function CheckPip {
 CheckPip 'pip install pandas (allowlisted)'  'pandas' $true
 CheckPip 'pip install flask  (blocked)'      'flask'  $false
 
-# ── Admin password checks ─────────────────────────────────────────────────────
+# -- Admin password checks -----------------------------------------------------
 Write-Host ""
 Write-Host "Admin credentials"
 CheckHttp 'Admin password accepted'             "$NexusUrl/service/rest/v1/security/users" -CurlArgs $adminAuth
 CheckHttp 'Default password (admin123) rejected' "$NexusUrl/service/rest/v1/security/users" -Expect @(401) -CurlArgs $defaultAuth
 
-# ── Repository existence ──────────────────────────────────────────────────────
+# -- Repository existence ------------------------------------------------------
 Write-Host ""
 Write-Host "Repositories"
 foreach ($repo in @('pypi-hosted', 'pypi-pypi.org', 'pypi-group', 'r-hosted', 'r-cran.r-project.org', 'r-group')) {
     CheckBody "Repo '$repo' exists" "$NexusUrl/service/rest/v1/repositories" -Contains $repo -CurlArgs $adminAuth
 }
 
-# ── Routing rules ─────────────────────────────────────────────────────────────
+# -- Routing rules -------------------------------------------------------------
 Write-Host ""
 Write-Host "Routing rules"
 CheckHttp 'pypi-allowlist exists'    "$NexusUrl/service/rest/v1/routing-rules/pypi-allowlist"   -CurlArgs $adminAuth
 CheckHttp 'r-cran-allowlist exists'  "$NexusUrl/service/rest/v1/routing-rules/r-cran-allowlist" -CurlArgs $adminAuth
 
-# ── Anonymous user roles ──────────────────────────────────────────────────────
+# -- Anonymous user roles ------------------------------------------------------
 Write-Host ""
 Write-Host "Anonymous user roles"
 CheckBody 'anonymous user has pypi-anonymous-reader' "$NexusUrl/service/rest/v1/security/users?userId=anonymous" -Contains 'pypi-anonymous-reader' -CurlArgs $adminAuth
 CheckBody 'anonymous user has r-anonymous-reader'    "$NexusUrl/service/rest/v1/security/users?userId=anonymous" -Contains 'r-anonymous-reader'    -CurlArgs $adminAuth
 
-# ── Summary ───────────────────────────────────────────────────────────────────
+# -- Summary -------------------------------------------------------------------
 Write-Host ""
 Write-Host $sep
 $colour = if ($fail -eq 0) { 'Green' } else { 'Red' }

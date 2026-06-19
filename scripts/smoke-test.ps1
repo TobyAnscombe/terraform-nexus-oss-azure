@@ -2,7 +2,7 @@
 .SYNOPSIS
     End-to-end smoke test for the Nexus OSS deployment.
 .DESCRIPTION
-    Validates the nginx → Nexus proxy chain, anonymous access, PyPI allowlist
+    Validates the nginx -> Nexus proxy chain, anonymous access, PyPI allowlist
     routing, and the CRAN proxy. Requires curl.exe (built into Windows 11).
 
     Phase 1 checks: need infra/ applied.
@@ -17,7 +17,7 @@ param([string]$NexusUrl)
 
 Set-StrictMode -Version Latest
 
-# ── Resolve URL ──────────────────────────────────────────────────────────────
+# -- Resolve URL --------------------------------------------------------------
 if (-not $NexusUrl) {
     $infraDir = Join-Path $PSScriptRoot '..' 'infra'
     Push-Location $infraDir
@@ -30,7 +30,7 @@ if (-not $NexusUrl) {
 }
 $NexusUrl = $NexusUrl.TrimEnd('/')
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# -- Helpers ------------------------------------------------------------------
 $pass = 0
 $fail = 0
 
@@ -50,25 +50,25 @@ function Check {
     }
 }
 
-# ── Checks ───────────────────────────────────────────────────────────────────
+# -- Checks -------------------------------------------------------------------
 Write-Host ""
 Write-Host "Nexus smoke test  $NexusUrl"
-Write-Host ("─" * 60)
+Write-Host ("-" * 60)
 
 Write-Host ""
-Write-Host "Phase 1 — infrastructure"
-Check 'Nexus up (Cloudflare Tunnel → Nexus)' "$NexusUrl/service/rest/v1/status"
+Write-Host "Phase 1 - infrastructure"
+Check 'Nexus up (Cloudflare Tunnel -> Nexus)' "$NexusUrl/service/rest/v1/status"
 
 Write-Host ""
-Write-Host "Phase 2 — Nexus configuration"
+Write-Host "Phase 2 - Nexus configuration"
 Check 'PyPI group index (anonymous read)'     "$NexusUrl/repository/pypi-group/simple/"
 Check 'Allowlisted package accessible (numpy)' "$NexusUrl/repository/pypi-group/simple/numpy/"
 Check 'Blocked package denied (flask)'        "$NexusUrl/repository/pypi-group/simple/flask/"  -Expect @(403, 404)
 Check 'CRAN PACKAGES index (anonymous read)'  "$NexusUrl/repository/r-group/src/contrib/PACKAGES.gz"
 
-# ── Summary ──────────────────────────────────────────────────────────────────
+# -- Summary ------------------------------------------------------------------
 Write-Host ""
-Write-Host ("─" * 60)
+Write-Host ("-" * 60)
 $colour = if ($fail -eq 0) { 'Green' } else { 'Red' }
 Write-Host "$pass passed, $fail failed" -ForegroundColor $colour
 Write-Host ""

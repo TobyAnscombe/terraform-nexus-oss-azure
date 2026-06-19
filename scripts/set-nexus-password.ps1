@@ -8,15 +8,10 @@
     NEXUS_URL      Base URL, e.g. https://nexus.example.com
     NEW_PASSWORD   Target admin password
 
-  Optional env vars (Cloudflare Access service token):
-    CF_ACCESS_CLIENT_ID
-    CF_ACCESS_CLIENT_SECRET
 #>
 param(
-  [string] $NexusUrl        = $env:NEXUS_URL,
-  [string] $NewPassword     = $env:NEW_PASSWORD,
-  [string] $CfClientId      = $env:CF_ACCESS_CLIENT_ID,
-  [string] $CfClientSecret  = $env:CF_ACCESS_CLIENT_SECRET
+  [string] $NexusUrl    = $env:NEXUS_URL,
+  [string] $NewPassword = $env:NEW_PASSWORD
 )
 
 if (-not $NexusUrl)    { throw 'NEXUS_URL is required' }
@@ -25,28 +20,26 @@ if (-not $NewPassword) { throw 'NEW_PASSWORD is required' }
 $base = $NexusUrl.TrimEnd('/')
 
 function Get-AuthHeaders([string] $CurrentPassword) {
-  $headers = @{}
   $cred = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("admin:$CurrentPassword"))
-  $headers['Authorization'] = "Basic $cred"
-  if ($CfClientId) {
-    $headers['CF-Access-Client-Id']     = $CfClientId
-    $headers['CF-Access-Client-Secret'] = $CfClientSecret
-  }
-  return $headers
+  return @{ Authorization = "Basic $cred" }
 }
 
 function Invoke-EulaAccept([string] $CurrentPassword) {
   $headers = Get-AuthHeaders -CurrentPassword $CurrentPassword
   $headers['Content-Type'] = 'application/json'
-  Invoke-RestMethod -Uri "$base/service/rest/v1/system/eula" -Method PUT `
-    -Headers $headers -Body '{"accepted":true}' -ErrorAction Stop
+  # Invoke-WebRequest rather than Invoke-RestMethod: PS 5.1 (Windows built-in)
+  # throws on 204 No Content when using Invoke-RestMethod because it tries to
+  # parse an empty body. Invoke-WebRequest + -UseBasicParsing handles 204 correctly
+  # on PS 5.1 and PS 7+.
+  Invoke-WebRequest -Uri "$base/service/rest/v1/system/eula" -Method PUT `
+    -Headers $headers -Body '{"accepted":true}' -UseBasicParsing -ErrorAction Stop | Out-Null
 }
 
 function Invoke-PasswordChange([string] $CurrentPassword) {
   $headers = Get-AuthHeaders -CurrentPassword $CurrentPassword
   $headers['Content-Type'] = 'text/plain'
-  Invoke-RestMethod -Uri "$base/service/rest/v1/security/users/admin/change-password" `
-    -Method PUT -Headers $headers -Body $NewPassword -ErrorAction Stop
+  Invoke-WebRequest -Uri "$base/service/rest/v1/security/users/admin/change-password" `
+    -Method PUT -Headers $headers -Body $NewPassword -UseBasicParsing -ErrorAction Stop | Out-Null
 }
 
 # Step 1 — accept EULA (Nexus CE blocks all repository access until accepted).

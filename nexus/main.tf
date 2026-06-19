@@ -10,8 +10,6 @@
 ###############################################################################
 
 locals {
-  nexus_url = data.terraform_remote_state.infra.outputs.nexus_base_url
-
   # Flatten all PyPI packages into a single list for the routing rule.
   all_pypi_packages = flatten(values(var.pypi_allowlist))
 

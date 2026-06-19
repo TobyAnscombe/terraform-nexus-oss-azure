@@ -116,8 +116,8 @@ variable "additional_storage_subnet_ids" {
     Each subnet must have the Microsoft.Storage service endpoint enabled.
     The ACI subnet is always included automatically.
   EOF
-  type    = list(string)
-  default = []
+  type        = list(string)
+  default     = []
 }
 
 # ---------------------------------------------------------------------------

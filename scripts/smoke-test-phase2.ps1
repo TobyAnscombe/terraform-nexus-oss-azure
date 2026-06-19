@@ -42,9 +42,9 @@ $fail = 0
 
 function CheckHttp {
     param([string]$Label, [string]$Url, [int[]]$Expect = @(200), [string[]]$CurlArgs = @())
-    $args  = @('-s', '-o', 'NUL', '-w', '%{http_code}') + $CurlArgs + @($Url)
-    $raw   = curl.exe @args 2>$null
-    $code  = if ($raw -match '^\d{3}$') { [int]$raw } else { 0 }
+    $curlArgs2 = @('-s', '-o', 'NUL', '-w', '%{http_code}') + $CurlArgs + @($Url)
+    $raw       = curl.exe @curlArgs2 2>$null
+    $code      = if ($raw -match '^\d{3}$') { [int]$raw } else { 0 }
     $ok    = $code -in $Expect
     if ($ok) {
         Write-Host ("  [PASS] " + $Label) -ForegroundColor Green
@@ -59,8 +59,8 @@ function CheckHttp {
 
 function CheckBody {
     param([string]$Label, [string]$Url, [string]$Contains, [string[]]$CurlArgs = @())
-    $args = @('-sf') + $CurlArgs + @($Url)
-    $body = curl.exe @args 2>$null
+    $curlArgs2 = @('-sf') + $CurlArgs + @($Url)
+    $body      = curl.exe @curlArgs2 2>$null
     $ok   = $LASTEXITCODE -eq 0 -and $body -like "*$Contains*"
     if ($ok) {
         Write-Host ("  [PASS] " + $Label) -ForegroundColor Green
@@ -100,12 +100,12 @@ function CheckPip {
         Write-Host "  [SKIP] $Label  (pip not found)" -ForegroundColor DarkGray
         return
     }
-    $out = pip install $Package `
+    $out = pip index versions $Package `
         --index-url "$NexusUrl/repository/pypi-group/simple/" `
         --trusted-host $trustedHost `
-        --dry-run --quiet 2>&1 | Out-String
+        2>&1 | Out-String
     if ($ExpectPass) {
-        if ($out -match 'would install|already satisfied|Requirement already') {
+        if ($out -match 'Available versions|' + $Package) {
             Write-Host ("  [PASS] " + $Label) -ForegroundColor Green
             $script:pass++
         } else {

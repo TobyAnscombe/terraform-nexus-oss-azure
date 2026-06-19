@@ -57,7 +57,7 @@ Write-Host ("─" * 60)
 
 Write-Host ""
 Write-Host "Phase 1 — infrastructure"
-Check 'Nexus up (nginx → Nexus proxy chain)' "$NexusUrl/service/rest/v1/status"
+Check 'Nexus up (Cloudflare Tunnel → Nexus)' "$NexusUrl/service/rest/v1/status"
 
 Write-Host ""
 Write-Host "Phase 2 — Nexus configuration"

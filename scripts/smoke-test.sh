@@ -62,7 +62,7 @@ printf '%0.s─' {1..60}; echo ""
 
 echo ""
 echo "Phase 1 — infrastructure"
-check "Nexus up (nginx → Nexus chain)"        "$NEXUS_URL/service/rest/v1/status"
+check "Nexus up (Cloudflare Tunnel → Nexus)"   "$NEXUS_URL/service/rest/v1/status"
 
 echo ""
 echo "Phase 2 — Nexus configuration"

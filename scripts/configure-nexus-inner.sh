@@ -2,12 +2,11 @@
 # Nexus Phase 2 configuration — runs INSIDE the ACI container against localhost:8081.
 # Invoked by configure-nexus.sh / configure-nexus.ps1 via az container exec.
 #
-# Required env var (set by outer script via `env NX_PW_B64=<value>`):
-#   NX_PW_B64  Base64-encoded Nexus admin password
+# The outer script prepends:  PW='<admin-password>'
+# before this file's body, so PW is available as a shell variable.
 set -euo pipefail
 
-: "${NX_PW_B64:?NX_PW_B64 is required — run via configure-nexus.sh/.ps1}"
-PW=$(printf '%s' "$NX_PW_B64" | base64 -d)
+: "${PW:?PW is required — run via configure-nexus.sh/.ps1}"
 BASE='http://localhost:8081'
 AUTH="admin:${PW}"
 

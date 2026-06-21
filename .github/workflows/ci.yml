@@ -30,7 +30,5 @@ jobs:
     if: github.event_name == 'push'
     needs: [infra, nexus-config, claude-file-check]
     uses: TobyAnscombe/github-actions/.github/workflows/branch-protection.yml@main
-    permissions:
-      administration: write
     with:
       required_checks: '["infra / Terraform", "infra / TFLint", "infra / Security scan", "nexus-config / Terraform", "nexus-config / TFLint", "nexus-config / Security scan", "claude-file-check / claude-file-check"]'

@@ -42,16 +42,40 @@ variable "pypi_allowlist" {
       "sqlalchemy", "psycopg2-binary", "pymysql", "pyodbc",
     ]
     jupyter = [
+      # Top-level
       "jupyter", "jupyterlab", "ipython", "ipykernel", "notebook",
       "nbformat", "nbconvert", "ipywidgets", "widgetsnbextension",
+      # Jupyter infrastructure
+      "async-lru", "comm", "jupyter-builder", "jupyter-client", "jupyter-core",
+      "jupyter-events", "jupyter-lsp", "jupyter-server", "jupyter-server-terminals",
+      "jupyterlab-pygments", "jupyterlab-server", "notebook-shim",
+      # Runtime
+      "anyio", "appnope", "argon2-cffi", "argon2-cffi-bindings", "debugpy",
+      "fastjsonschema", "json5", "matplotlib-inline", "nbclient", "nest-asyncio2",
+      "platformdirs", "prometheus-client", "psutil", "pyzmq", "python-json-logger",
+      "send2trash", "terminado", "tornado", "traitlets", "websocket-client",
+      # nbconvert deps
+      "babel", "beautifulsoup4", "bleach", "defusedxml", "mistune",
+      "pandocfilters", "soupsieve", "tinycss2", "webencodings",
+      # jsonschema / jupyter-events deps
+      "arrow", "fqdn", "isoduration", "jsonpointer", "jsonschema",
+      "jsonschema-specifications", "lark", "referencing", "rfc3339-validator",
+      "rfc3986-validator", "rfc3987-syntax", "rpds-py", "uri-template", "webcolors",
+      # IPython deps
+      "asttokens", "decorator", "executing", "ipython-pygments-lexers",
+      "jedi", "parso", "pexpect", "prompt-toolkit", "ptyprocess",
+      "pure-eval", "stack-data", "wcwidth",
     ]
     utilities = [
       "joblib", "numba", "tqdm",
-      "requests", "httpx", "aiohttp",
+      "requests", "httpx", "aiohttp", "h11", "httpcore",
       "python-dateutil", "pytz", "tzdata", "six",
       "certifi", "charset-normalizer", "idna", "urllib3",
       "packaging", "click",
       "pydantic", "pydantic-core", "typing-extensions", "attrs", "annotated-types",
+      "cffi", "pycparser",
+      "jinja2", "markupsafe",
+      "pygments", "pyyaml",
     ]
   }
 }

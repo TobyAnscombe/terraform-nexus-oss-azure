@@ -22,7 +22,7 @@ if (-not $NexusUrl) {
     $root     = Join-Path $PSScriptRoot '..'
     $infraDir = Join-Path $root 'infra'
     $tfExe    = if (Get-Command terraform -ErrorAction SilentlyContinue) { 'terraform' }
-                elseif (Test-Path (Join-Path $root 'terraform.exe'))     { Join-Path $root 'terraform.exe' }
+                elseif (Test-Path (Join-Path $root '.\terraform.exe'))     { Join-Path $root 'terraform.exe' }
                 else                                                      { $null }
     if ($tfExe) {
         Push-Location $infraDir

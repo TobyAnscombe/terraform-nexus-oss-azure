@@ -22,14 +22,15 @@ variable "pypi_allowlist" {
   })
   default = {
     build_tools = [
-      "pip", "setuptools", "wheel", "twine", "build", "poetry", "pytest",
+      "pip", "setuptools", "wheel", "twine", "build", "poetry", "pytest", "oldest-supported-numpy", "pybind11"
     ]
     core = [
       "numpy", "pandas", "scipy", "polars", "pyarrow",
       "dask", "pyspark",
     ]
     visualisation = [
-      "matplotlib", "seaborn", "plotly", "bokeh", "altair", "kaleido", "missingno",
+      "matplotlib", "seaborn", "plotly", "bokeh", "altair", "kaleido", "missingno", "contourpy","cycler","fonttools","kiwisolver","pillow","pyparsing",
+
     ]
     ml = [
       "scikit-learn", "xgboost", "lightgbm", "statsmodels", "lifelines", "pingouin",

@@ -40,7 +40,7 @@ variable "pypi_allowlist" {
     ]
     data_io = [
       "openpyxl", "xlrd", "xlsxwriter", "fastparquet",
-      "sqlalchemy", "psycopg2-binary", "pymysql", "pyodbc",
+      "sqlalchemy", "psycopg2-binary", "pymysql", "pyodbc", "et-xmlfile",
     ]
     jupyter = [
       # Top-level

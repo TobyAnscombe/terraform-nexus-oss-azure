@@ -378,7 +378,7 @@ Packages uploaded to the hosted repos (`pypi-hosted`, `r-hosted`) are always ava
 | **core** | numpy, pandas, scipy, polars, pyarrow, dask, pyspark |
 | **visualisation** | matplotlib, seaborn, plotly, bokeh, altair, kaleido, missingno |
 | **ml** | scikit-learn, xgboost, lightgbm, statsmodels, lifelines, pingouin, mlflow, shap, lime, eli5, pandera, great-expectations |
-| **data_io** | openpyxl, xlrd, xlsxwriter, fastparquet, sqlalchemy, psycopg2-binary, pymysql, pyodbc |
+| **data_io** | openpyxl, xlrd, xlsxwriter, fastparquet, sqlalchemy, psycopg2-binary, pymysql, pyodbc, et-xmlfile |
 | **jupyter** | jupyter, jupyterlab, ipython, ipykernel, notebook, nbformat, nbconvert, ipywidgets, widgetsnbextension |
 | **utilities** | joblib, numba, tqdm, requests, httpx, aiohttp, python-dateutil, pytz, tzdata, six, certifi, charset-normalizer, idna, urllib3, packaging, click, pydantic, pydantic-core, typing-extensions, attrs, annotated-types |
 

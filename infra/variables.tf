@@ -42,14 +42,14 @@ variable "nexus_image" {
   description = "Nexus OSS container image. Pin to a specific tag; update here when upgrading."
   type        = string
   # renovate: datasource=docker
-  default = "sonatype/nexus3:3.93.0"
+  default = "sonatype/nexus3:3.96.0"
 }
 
 variable "cloudflared_image" {
   description = "Cloudflare Tunnel sidecar image. Pin to a specific tag; check github.com/cloudflare/cloudflared/releases for the latest."
   type        = string
   # renovate: datasource=docker
-  default = "cloudflare/cloudflared:2026.6.1"
+  default = "cloudflare/cloudflared:2026.8.3"
 }
 
 # ---------------------------------------------------------------------------

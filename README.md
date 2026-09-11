@@ -101,7 +101,10 @@ Phase 2 reads the Nexus URL from Phase 1 remote state. A `time_sleep` in Phase 1
 
 ### Step 1 — Remote state backend (one-time)
 
-Terraform state is stored in Azure Blob Storage. Run this once before the first deploy:
+Terraform state is stored in Azure Blob Storage using Azure AD authentication.
+This repository uses the dedicated `terraform-nexus-oss-azure` container in
+`sttfstateukhtbs01`, with separate development keys for the two Terraform stacks.
+Run this once before the first deploy:
 
 **macOS / Linux**
 ```bash
@@ -117,21 +120,35 @@ az account set --subscription "<subscription-id>"
 .\scripts\create-backend.ps1
 ```
 
-The script creates the storage account, blob container, and writes `backend.hcl` in the repo root. Copy it for each phase:
+The script creates the repository container and writes the git-ignored phase configurations:
 
-**macOS / Linux**
-```bash
-sed 's/nexus-oss.terraform.tfstate/infra.tfstate/' backend.hcl > infra/backend.hcl
-sed 's/nexus-oss.terraform.tfstate/nexus.tfstate/'  backend.hcl > nexus/backend.hcl
-```
+- `infra/backend.hcl` uses `dev/infra.tfstate`.
+- `nexus/backend.hcl` uses `dev/nexus.tfstate`.
 
-**Windows (PowerShell)**
+The identity running the script and Terraform needs `Storage Blob Data Contributor` on this repository container.
+See [infra/backend.hcl.example](infra/backend.hcl.example) and [nexus/backend.hcl.example](nexus/backend.hcl.example) for the format.
+
+#### Migrate existing state
+
+For an existing deployment from the legacy `sttfstategjkzhp/tfstate` backend, grant the running identity `Storage Blob Data Contributor` on both the legacy and new containers, then run:
+
 ```powershell
-(Get-Content backend.hcl) -replace 'nexus-oss.terraform.tfstate','infra.tfstate' | Set-Content infra\backend.hcl
-(Get-Content backend.hcl) -replace 'nexus-oss.terraform.tfstate','nexus.tfstate'  | Set-Content nexus\backend.hcl
+.\scripts\create-backend.ps1
+Push-Location infra
+..\terraform.exe init -migrate-state -backend-config backend.hcl
+Pop-Location
+Push-Location nexus
+..\terraform.exe init -migrate-state -backend-config backend.hcl
+Pop-Location
 ```
 
-`backend.hcl` is git-ignored. See [infra/backend.hcl.example](infra/backend.hcl.example) and [nexus/backend.hcl.example](nexus/backend.hcl.example) for the format.
+Confirm the new state layout:
+
+```powershell
+az storage blob list --account-name sttfstateukhtbs01 --container-name terraform-nexus-oss-azure --auth-mode login --query "[].name" -o tsv
+```
+
+Expected blobs are `dev/infra.tfstate` and `dev/nexus.tfstate`.
 
 ---
 
@@ -642,10 +659,10 @@ cd ../infra && terraform destroy
 
 > ⚠️ `terraform destroy` in `infra/` deletes the resource group and **all** contents, including the Azure Files share and every cached package.
 
-The remote state backend (`rg-nexus-tf-state`) is managed separately and is **not** destroyed. Delete it manually if no longer needed:
+The remote state backend (`rg-terraform-state`) is managed separately and is **not** destroyed. Delete it manually if no longer needed:
 
 ```bash
-az group delete --name rg-nexus-tf-state
+az group delete --name rg-terraform-state
 ```
 
 ---
@@ -674,7 +691,7 @@ az group delete --name rg-nexus-tf-state
 │   ├── container.tf               ACI Container Group + time_sleep.nexus_ready (2 min)
 │   ├── outputs.tf                 nexus_base_url, nexus_private_url, pip URLs, snippets
 │   ├── terraform.tfvars.example
-│   ├── backend.hcl.example        key = infra.tfstate
+│   ├── backend.hcl.example        key = dev/infra.tfstate
 │   └── .terraform.lock.hcl
 │
 ├── nexus/                         Phase 2 — Nexus configuration (datadrivers/nexus provider)
@@ -688,11 +705,11 @@ az group delete --name rg-nexus-tf-state
 │   │                                r-hosted / r-cran.r-project.org proxy / r-group
 │   │                                4 roles + anonymous user locked to reader roles
 │   ├── terraform.tfvars.example
-│   ├── backend.hcl.example        key = nexus.tfstate
+│   ├── backend.hcl.example        key = dev/nexus.tfstate
 │   └── .terraform.lock.hcl
 │
 ├── scripts/
-│   ├── create-backend.sh          Bash: provision remote state storage + write backend.hcl
+│   ├── create-backend.sh          Bash: create repo state container + phase backend configs
 │   ├── create-backend.ps1         PowerShell: same as above for Windows
 │   ├── smoke-test.sh              Bash: Phase 1+2 smoke test (PyPI, CRAN)
 │   ├── smoke-test.ps1             PowerShell: same as above for Windows

@@ -1,7 +1,9 @@
 terraform {
   required_version = ">= 1.5.0"
 
-  backend "azurerm" {}
+  backend "azurerm" {
+    use_azuread_auth = true
+  }
 
   required_providers {
     nexus = {
@@ -16,10 +18,10 @@ terraform {
 data "terraform_remote_state" "infra" {
   backend = "azurerm"
   config = {
-    resource_group_name  = "rg-nexus-tf-state"
+    resource_group_name  = "rg-terraform-state"
     storage_account_name = var.state_storage_account
-    container_name       = "tfstate"
-    key                  = "infra.tfstate"
+    container_name       = "terraform-nexus-oss-azure"
+    key                  = "dev/infra.tfstate"
   }
 }
 

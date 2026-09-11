@@ -3,7 +3,7 @@
 
 # ── Required ──────────────────────────────────────────────────────────────────
 admin_password        = "Ch@ngeMe123!"       # must match the password set in infra/
-state_storage_account = "sttfstate<suffix>"  # same storage account as infra/backend.hcl
+state_storage_account = "sttfstateukhtbs01"  # same storage account as infra/backend.hcl
 
 # ── Package allowlists (optional — defaults cover the full list) ───────────────
 # Override only the categories you want to change.  Shown with a few examples:
